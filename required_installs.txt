@@ -1,0 +1,24 @@
+pip install gspread oauth2client
+pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+# support document: https://developers.google.com/sheets/api/quickstart/python
+https://cloud.google.com/sdk/docs/install
+https://cloud.google.com/docs/authentication/provide-credentials-adc#local-dev
+https://developers.google.com/sheets/api/guides/values#python
+
+
+C:\Users\Gilbert Montemayor\AppData\Local\Google\Cloud SDK>gcloud auth application-default login
+Your browser has been opened to visit:
+
+    https://accounts.google.com/o/oauth2/auth?response_type=code&client_id=764086051850-6qr4p6gpi6hn506pt8ejuq83di341hur.apps.googleusercontent.com&redirect_uri=http%3A%2F%2Flocalhost%3A8085%2F&scope=openid+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fsqlservice.login&state=aGYllZ6w4V98xRYyhV3tw59pTzJaaB&access_type=offline&code_challenge=pfCLLoaOzPSFDHzmw1eE3CGL4RjuSW-7WRAexvyCjSs&code_challenge_method=S256
+
+
+Credentials saved to file: [C:\Users\Gilbert Montemayor\AppData\Roaming\gcloud\application_default_credentials.json]
+
+These credentials will be used by any library that requests Application Default Credentials (ADC).
+
+Quota project "tensile-talent-420617" was added to ADC which can be used by Google client libraries for billing and quota. Note that some services may still bill the project owning the resource.
+
+
+For the google_serps_ticker_craw.py file install the following:
+pip install pytorch-bsf (remove)
+pip install bs4

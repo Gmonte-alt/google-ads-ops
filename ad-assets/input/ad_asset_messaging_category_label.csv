@@ -1,0 +1,52 @@
+field_type,asset_type,asset_text,uniqueness_label,messaging_category
+HEADLINE,TEXT,Furnished Corporate Housing,unique,category core  + search term
+HEADLINE,TEXT,Travel Professional Housing,unique,category core
+HEADLINE,TEXT,Corporate Housing Properties,unique,search term
+HEADLINE,TEXT,Extended Stay Apartments,unique,search term
+HEADLINE,TEXT,Explore Extended Stay Options,unique,CTA + search term
+HEADLINE,TEXT,Extended Stay Rentals,unique,search term
+HEADLINE,TEXT,Explore Extended Stay Homes,unique,CTA + search term
+HEADLINE,TEXT,Fully Furnished Properties,unique,category core
+HEADLINE,TEXT,Furnished Apartments For Rent,unique,category core
+HEADLINE,TEXT,Long Term Apartments For Rent,unique,category adjacent
+HEADLINE,TEXT,Long Term Rentals,unique,category adjacent
+HEADLINE,TEXT,Short Term Rentals,unique,category adjacent
+HEADLINE,TEXT,Short Term Apartments For Rent,unique,category adjacent
+HEADLINE,TEXT,Short Time House Rentals,unique,category adjacent
+HEADLINE,TEXT,Explore Monthly Rentals,unique,CTA + category core
+HEADLINE,TEXT,Find Month To Month Rentals,unique,CTA + category core
+HEADLINE,TEXT,Experts On Monthly Rentals,unique,value prop + category core
+HEADLINE,TEXT,Month To Month House Rentals,unique,category core
+HEADLINE,TEXT,Easy And Fast,unique,value prop
+HEADLINE,TEXT,Specialized in 30+ Day Stays,unique,value prop
+HEADLINE,TEXT,Explore Weekly Rentals,unique,CTA + category adjacent
+HEADLINE,TEXT,Weekly Stay Apartment Rentals,unique,CTA + category adjacent
+HEADLINE,TEXT,Furnished Houses Near You,unique,category core  + search term
+HEADLINE,TEXT,Specialized In Travel Nurses,unique,value prop + search term
+HEADLINE,TEXT,Travel Nurse Property Finder,unique,feature + search term
+HEADLINE,TEXT,Furnished Housing For Nurses,unique,category core  + search term
+HEADLINE,TEXT,Housing For Travel Nurses,unique,category generic + search term
+HEADLINE,TEXT,Explore Sublet Rentals,unique,CTA + category adjacent
+HEADLINE,TEXT,Find Shared Properties,unique,CTA + category adjacent
+HEADLINE,TEXT,Find Apartments Near You,unique,CTA + category generic + search term
+HEADLINE,TEXT,Explore Rentals Near You,unique,CTA + category generic + search term
+HEADLINE,TEXT,Fully Furnished Rentals,multiple,category core
+HEADLINE,TEXT,Explore with Furnished Finder,multiple,CTA + brand
+HEADLINE,TEXT,Connect Directly to Landlords,multiple,value prop
+HEADLINE,TEXT,"No Booking Fees, Ever",multiple,value prop
+HEADLINE,TEXT,1M+Traveler Searches Per Year,multiple,value prop
+HEADLINE,TEXT,250K+ Properties Nationwide,multiple,value prop
+DESCRIPTION,TEXT,We connect Tenants & Landlords to each other directly. No booking fees getting in the way,multiple,value prop
+DESCRIPTION,TEXT,"We're the leader in mid-term rentals for nurses, professionals, relocating families & more",multiple,value prop
+DESCRIPTION,TEXT,Find the best furnished properties for you on Furnished Finder today,multiple,value prop + brand
+DESCRIPTION,TEXT,Furnished Finder simplifies corporate rentals. Explore and find the right place today!,multiple,value prop + brand + cta
+HEADLINE,TEXT,Trusted Since 2014,multiple,value prop
+HEADLINE,TEXT,Designed For Professionals,multiple,value prop
+HEADLINE,TEXT,Housing In {LOCATION(City)},multiple,category generic + location
+HEADLINE,TEXT,Find Your Ideal Place Today,multiple,cta + value prop
+HEADLINE,TEXT,The Mid-Term Rentals Leader,multiple,value prop
+HEADLINE,TEXT,Explore Thousands Of Places,multiple,cta + value prop
+HEADLINE,TEXT,Rentals In {LOCATION(City)},multiple,category generic + location
+HEADLINE,TEXT,Explore Furnished Rentals,multiple,CTA + category core
+HEADLINE,TEXT,"Explore Houses, Flats And More",multiple,CTA + value prop
+HEADLINE,TEXT,Short Term House Rentals,unique,category adjacent

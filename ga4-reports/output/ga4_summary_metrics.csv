@@ -1,0 +1,28 @@
+Channel Group,Campaign Group,FF_Lead_Event_Count_Actual,FF_Purchase_Event_Count_Actual,FF_BRSubmit_Event_Count_Actual,FF_DMSubmit_Event_Count_Actual,FF_PhoneGet_Event_Count_Actual,Housing Requests_Actual,Total Traveler Actions_Actual,Traveler Value_Actual,Landlord Value_Actual,Sessions_Actual,FF_Lead_Event_Count_LW,FF_Purchase_Event_Count_LW,FF_BRSubmit_Event_Count_LW,FF_DMSubmit_Event_Count_LW,FF_PhoneGet_Event_Count_LW,Housing Requests_LW,Total Traveler Actions_LW,Traveler Value_LW,Landlord Value_LW,Sessions_LW
+Bing SEM Total,Bing SEM Total,0,0,0,0,0,0,0,0,0,0,487,169,446,1113,1498,135,3192,6384,40560,28607
+Direct,Direct,0,0,0,0,0,0,0,0,0,0,564,598,2910,3890,7217,411,14428,28856,143520,235706
+Google SEM Total,Google SEM Total,0,0,0,0,0,0,0,0,0,0,1560,498,3303,4258,7146,561,15268,30536,119520,111191
+Non-Paid Total,Non-Paid Total,0,0,0,0,0,0,0,0,0,0,1146,972,5367,8218,14705,679,28969,57938,233280,363079
+Organic Search (SEO),Organic Search (SEO),0,0,0,0,0,0,0,0,0,0,229,224,1766,3057,5515,190,10528,21056,53760,72892
+Other,Other,0,0,0,0,0,0,0,0,0,0,41,49,225,325,727,20,1297,2594,11760,21053
+Paid Social + Display,Facebook Prospecting,0,0,0,0,0,0,0,0,0,0,183,20,6,2,32,2,42,84,4800,5612
+Paid Social + Display,Facebook Prospecting - Traveler,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,235
+Paid Social + Display,Facebook Retargeting,0,0,0,0,0,0,0,0,0,0,5,5,2,0,1,1,4,8,1200,958
+Paid Social + Display,Google Display Prospecting,0,0,0,0,0,0,0,0,0,0,131,1,1,0,1,7,9,18,240,1769
+Paid Social + Display,Google Display Retargeting,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,1,1,2,0,192
+Paid Social + Display Total,Paid Social + Display Total,0,0,0,0,0,0,0,0,0,0,325,26,9,2,34,11,56,112,6240,8811
+Paid Total,Paid Total,0,0,0,0,0,0,0,0,0,0,2372,697,3797,5429,8834,708,18768,37536,167280,150539
+Referral,Referral,0,0,0,0,0,0,0,0,0,0,312,105,505,1002,1402,59,2968,5936,25200,35403
+SEM Brand,Bing Search - Brand,0,0,0,0,0,0,0,0,0,0,126,115,330,866,1119,80,2395,4790,27600,12472
+SEM Brand,Google Search - Other,0,0,0,0,0,0,0,0,0,0,1208,420,2759,3764,6135,450,13108,26216,100800,90848
+SEM Brand Total,SEM Brand Total,0,0,0,0,0,0,0,0,0,0,1334,535,3089,4630,7254,530,15503,31006,128400,103320
+SEM Non Brand Total,SEM Non Brand Total,0,0,0,0,0,0,0,0,0,0,713,132,660,741,1390,166,2957,5914,31680,36478
+SEM NonBrand,Bing Search - Non Brand (All Campaigns),0,0,0,0,0,0,0,0,0,0,361,54,116,247,379,55,797,1594,12960,16135
+SEM NonBrand,Google Search - Corporate,0,0,0,0,0,0,0,0,0,0,43,8,32,38,61,7,138,276,1920,1876
+SEM NonBrand,Google Search - Healthcare,0,0,0,0,0,0,0,0,0,0,0,0,5,8,16,3,32,64,0,134
+SEM NonBrand,Google Search - Housing,0,0,0,0,0,0,0,0,0,0,55,12,158,148,318,27,651,1302,2880,4990
+SEM NonBrand,Google Search - Landlord,0,0,0,0,0,0,0,0,0,0,109,20,13,10,30,5,58,116,4800,1873
+SEM NonBrand,Google Search - Other,0,0,0,0,0,0,0,0,0,0,0,0,5,8,8,0,21,42,0,250
+SEM NonBrand,Google Search - Travel Nurse,0,0,0,0,0,0,0,0,0,0,93,17,58,39,74,15,186,372,4080,3000
+SEM NonBrand,Google Search - Travel Nurse Housing,0,0,0,0,0,0,0,0,0,0,26,14,15,40,29,3,87,174,3360,992
+SEM NonBrand - Tenant,Google Search - Tenants,0,0,0,0,0,0,0,0,0,0,26,7,258,203,475,51,987,1974,1680,7228

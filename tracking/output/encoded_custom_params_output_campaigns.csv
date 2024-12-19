@@ -1,0 +1,22 @@
+Account name,Customer ID,Campaign ID,Campaign,Campaign state,Custom Parameter Key name,Custom Parameter Value Encoded
+Furnished Finder,755-457-3980,20875775163,Search - Corporate,Enabled,_campaign,Search+-+Corporate
+Furnished Finder,755-457-3980,20885986489,Search - Travel Nurse Housing,Enabled,_campaign,Search+-+Travel+Nurse+Housing
+Furnished Finder,755-457-3980,20885987002,FF - Search - Brand,Enabled,_campaign,FF+-+Search+-+Brand
+Furnished Finder,755-457-3980,20882340428,Search - Housing,Enabled,_campaign,Search+-+Housing
+Furnished Finder,755-457-3980,20875775175,Search - Travel Nurse,Enabled,_campaign,Search+-+Travel+Nurse
+Furnished Finder,755-457-3980,20882340167,Search - Healthcare,Enabled,_campaign,Search+-+Healthcare
+Furnished Finder,755-457-3980,20875774446,Search - Landlord,Enabled,_campaign,Search+-+Landlord
+Furnished Finder,755-457-3980,21167566962,FF - Search - Brand  - Max Conv Bidding,Enabled,_campaign,FF+-+Search+-+Brand++-+Max+Conv+Bidding
+Furnished Finder,755-457-3980,21251323809,Search - Competitors,Enabled,_campaign,Search+-+Competitors
+Furnished Finder,755-457-3980,21335338050,Search - Travel Nurse Housing FF - Travel Nurse Housing - test mobile modifier 20240530,Enabled,_campaign,Search+-+Travel+Nurse+Housing+FF+-+Travel+Nurse+Housing+-+test+mobile+modifier+20240530
+Furnished Finder,755-457-3980,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,_campaign,Search+-+Landlord++-50pct+Mobile+Bid+Mod
+Furnished Finder,755-457-3980,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,_campaign,Search+-+Travel+Nurse+FF+-+Travel+Nurse+-+test+max+conv+purchase+20240530
+Furnished Finder,755-457-3980,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,_campaign,Search+-+Competitors++-+Purchase+Max+Conv
+Furnished Finder,755-457-3980,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,_campaign,Search+-+Housing+FF+-+Housing+-+test+mobile+modifier+20240530
+Furnished Finder,755-457-3980,21345472741,Search - Healthcare  - test max conv purchase  20240530,Enabled,_campaign,Search+-+Healthcare++-+test+max+conv+purchase++20240530
+Furnished Finder,755-457-3980,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,_campaign,Search+-+Corporate+FF+-+Corporate+-+test+mobile+modifier+20240530
+Travel Nurse Housing,773-103-2510,19870687918,TNH - Rentals  - Impr Share Bidding Exp,Enabled,_campaign,TNH+-+Rentals++-+Impr+Share+Bidding+Exp
+Travel Nurse Housing,773-103-2510,20875833798,TNH - Search - Landlord,Enabled,_campaign,TNH+-+Search+-+Landlord
+Travel Nurse Housing,773-103-2510,20882398478,TNH - Search - Travel Nurse Housing,Enabled,_campaign,TNH+-+Search+-+Travel+Nurse+Housing
+Travel Nurse Housing,773-103-2510,20875833783,TNH - Search - Brand,Enabled,_campaign,TNH+-+Search+-+Brand
+Travel Nurse Housing,773-103-2510,21087711070,TNH - Search - Landlord  - Broad Included,Enabled,_campaign,TNH+-+Search+-+Landlord++-+Broad+Included

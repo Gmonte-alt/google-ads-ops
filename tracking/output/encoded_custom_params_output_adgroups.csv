@@ -1,0 +1,160 @@
+Account name,Customer ID,Ad group ID,Ad group,Campaign ID,Campaign,Campaign state,Ad group state,Custom Parameter Key name,Custom Parameter Value Encoded
+Furnished Finder,755-457-3980,154876602857,Corporate,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Corporate
+Furnished Finder,755-457-3980,154876602897,Corporate - Extended,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Corporate+-+Extended
+Furnished Finder,755-457-3980,154876602937,Corporate - Furnished,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Corporate+-+Furnished
+Furnished Finder,755-457-3980,154876603097,Corporate - Long Term,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Corporate+-+Long+Term
+Furnished Finder,755-457-3980,154876603137,Corporate - Short Term,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Corporate+-+Short+Term
+Furnished Finder,755-457-3980,154876603177,Executive - Apartments,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Executive+-+Apartments
+Furnished Finder,755-457-3980,154876603337,Professionals,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Professionals
+Furnished Finder,755-457-3980,154876603377,Professionals - Furnished,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Professionals+-+Furnished
+Furnished Finder,755-457-3980,154876603417,Professionals - Short Term,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Professionals+-+Short+Term
+Furnished Finder,755-457-3980,154876603577,Professionals - Temporary,20875775163,Search - Corporate,Enabled,Enabled,_adgroup,Professionals+-+Temporary
+Furnished Finder,755-457-3980,155650722623,Travel Nurse Housing,20885986489,Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Travel+Nurse+Housing
+Furnished Finder,755-457-3980,155650723103,Furnished Finder - Brand,20885987002,FF - Search - Brand,Enabled,Enabled,_adgroup,Furnished+Finder+-+Brand
+Furnished Finder,755-457-3980,156398145305,Apartments - Extended,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Apartments+-+Extended
+Furnished Finder,755-457-3980,156398145345,Apartments - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Apartments+-+Furnished
+Furnished Finder,755-457-3980,156398145505,Apartments - Weekly,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Apartments+-+Weekly
+Furnished Finder,755-457-3980,156398145545,Extended,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Extended
+Furnished Finder,755-457-3980,156398145585,Extended - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Extended+-+Furnished
+Furnished Finder,755-457-3980,156398145745,Extended - Short Term,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Extended+-+Short+Term
+Furnished Finder,755-457-3980,156398145785,Housing - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Housing+-+Furnished
+Furnished Finder,755-457-3980,156398145825,Long Term,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Long+Term
+Furnished Finder,755-457-3980,156398145985,Long Term - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Long+Term+-+Furnished
+Furnished Finder,755-457-3980,156398146025,Monthly,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Monthly
+Furnished Finder,755-457-3980,156398146065,Monthly - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Monthly+-+Furnished
+Furnished Finder,755-457-3980,156398146225,Short Term,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Short+Term
+Furnished Finder,755-457-3980,156398146265,Short Term - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Short+Term+-+Furnished
+Furnished Finder,755-457-3980,156398146945,Travel Nurse - Accommodations,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Accommodations
+Furnished Finder,755-457-3980,156398146985,Travel Nurse - Apartments,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Apartments
+Furnished Finder,755-457-3980,156398147025,Travel Nurse - Corporate,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Corporate
+Furnished Finder,755-457-3980,156398147185,Travel Nurse - Furnished,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Furnished
+Furnished Finder,755-457-3980,156398147225,Travel Nurse - Housing,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Housing
+Furnished Finder,755-457-3980,156398147265,Travel Nurse - Lodging,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Lodging
+Furnished Finder,755-457-3980,156398147425,Travel Nurse - Long Term,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Long+Term
+Furnished Finder,755-457-3980,156398147465,Travel Nurse - Monthly,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Monthly
+Furnished Finder,755-457-3980,156398147505,Travel Nurse - Rental,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Rental
+Furnished Finder,755-457-3980,156398147665,Travel Nurse - Room,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Room
+Furnished Finder,755-457-3980,156398147705,Travel Nurse - Short Term,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Short+Term
+Furnished Finder,755-457-3980,156398147745,Travel Nurse - Temporary,20875775175,Search - Travel Nurse,Enabled,Enabled,_adgroup,Travel+Nurse+-+Temporary
+Furnished Finder,755-457-3980,157572336232,Healthcare - Housing,20882340167,Search - Healthcare,Enabled,Enabled,_adgroup,Healthcare+-+Housing
+Furnished Finder,755-457-3980,157572336392,Healthcare - Short Term,20882340167,Search - Healthcare,Enabled,Enabled,_adgroup,Healthcare+-+Short+Term
+Furnished Finder,755-457-3980,157579026623,Rental - Furnished,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Rental+-+Furnished
+Furnished Finder,755-457-3980,157579026663,Mid Term,20882340428,Search - Housing,Enabled,Enabled,_adgroup,Mid+Term
+Furnished Finder,755-457-3980,159880301256,Landlord - Rent My House,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Rent+My+House
+Furnished Finder,755-457-3980,160744772613,Furnished Finder - Brand,21167566962,FF - Search - Brand  - Max Conv Bidding,Enabled,Enabled,_adgroup,Furnished+Finder+-+Brand
+Furnished Finder,755-457-3980,161298933825,Competitor - STR - STR Ban,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+STR+Ban
+Furnished Finder,755-457-3980,161298933985,Competitor - STR - VR Alternatives,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+VR+Alternatives
+Furnished Finder,755-457-3980,161298934025,Competitor - MTR - Hellolanding,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+MTR+-+Hellolanding
+Furnished Finder,755-457-3980,161298934065,Competitor - LTR - Apartmentlist,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Apartmentlist
+Furnished Finder,755-457-3980,161298934225,Competitor - STR - Airbnb,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Airbnb
+Furnished Finder,755-457-3980,161298934265,Competitor - STR - evolve,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+evolve
+Furnished Finder,755-457-3980,161298934305,Competitor - STR - Vrbo,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Vrbo
+Furnished Finder,755-457-3980,161298934465,Competitor - STR - Vacasa,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Vacasa
+Furnished Finder,755-457-3980,161298934505,Competitor - STR - Flipkey,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Flipkey
+Furnished Finder,755-457-3980,161298934545,Competitor - MTR - TheBlueGround,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+MTR+-+TheBlueGround
+Furnished Finder,755-457-3980,161298934705,Competitor - LTR - Zillow,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Zillow
+Furnished Finder,755-457-3980,161298934745,Competitor - LTR - Redfin,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Redfin
+Furnished Finder,755-457-3980,161298934785,Competitor - LTR - Realtor.com,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Realtor.com
+Furnished Finder,755-457-3980,161298934945,Competitor - LTR - Apartments.com,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Apartments.com
+Furnished Finder,755-457-3980,161298934985,Competitor - LTR - Homes.com,21251323809,Search - Competitors,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Homes.com
+Furnished Finder,755-457-3980,161429817485,Travel Nurse Housing,21335338050,Search - Travel Nurse Housing FF - Travel Nurse Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+Housing
+Furnished Finder,755-457-3980,161667795066,Landlord - Rent My House,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Rent+My+House
+Furnished Finder,755-457-3980,161667795106,Landlord - Area Averages,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Area+Averages
+Furnished Finder,755-457-3980,161667795266,Landlord - Calculate Rent,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Calculate+Rent
+Furnished Finder,755-457-3980,161667795306,Landlord - Corporate,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Corporate
+Furnished Finder,755-457-3980,161667795346,Landlord - Cost to Rent,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Cost+to+Rent
+Furnished Finder,755-457-3980,161667795506,Landlord - How Much in Rent,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+How+Much+in+Rent
+Furnished Finder,755-457-3980,161667795546,Landlord - How to Make a Rental,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+How+to+Make+a+Rental
+Furnished Finder,755-457-3980,161667795586,Landlord - Investment Property,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Investment+Property
+Furnished Finder,755-457-3980,161667795746,Landlord - Long Term,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Long+Term
+Furnished Finder,755-457-3980,161667795786,Landlord - Medical,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Medical
+Furnished Finder,755-457-3980,161667795826,Landlord - Mid Term,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Mid+Term
+Furnished Finder,755-457-3980,161667795986,Landlord - Monthly,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Monthly
+Furnished Finder,755-457-3980,161667796026,Landlord - Professionals,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Professionals
+Furnished Finder,755-457-3980,161667796066,Landlord - Short Term,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Short+Term
+Furnished Finder,755-457-3980,161667796226,Landlord - Students,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Students
+Furnished Finder,755-457-3980,161667796266,Landlord - Travel Nurse,21272832701,Search - Landlord  -50pct Mobile Bid Mod,Enabled,Enabled,_adgroup,Landlord+-+Travel+Nurse
+Furnished Finder,755-457-3980,162681831291,Landlord - Area Averages,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Area+Averages
+Furnished Finder,755-457-3980,162681831331,Landlord - Calculate Rent,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Calculate+Rent
+Furnished Finder,755-457-3980,162681831491,Landlord - Corporate,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Corporate
+Furnished Finder,755-457-3980,162681831531,Landlord - Cost to Rent,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Cost+to+Rent
+Furnished Finder,755-457-3980,162681831571,Landlord - How Much in Rent,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+How+Much+in+Rent
+Furnished Finder,755-457-3980,162681831731,Landlord - How to Make a Rental,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+How+to+Make+a+Rental
+Furnished Finder,755-457-3980,162681831771,Landlord - Investment Property,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Investment+Property
+Furnished Finder,755-457-3980,162681831811,Landlord - Long Term,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Long+Term
+Furnished Finder,755-457-3980,162681831971,Landlord - Medical,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Medical
+Furnished Finder,755-457-3980,162681832011,Landlord - Mid Term,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Mid+Term
+Furnished Finder,755-457-3980,162681832051,Landlord - Monthly,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Monthly
+Furnished Finder,755-457-3980,162681832211,Landlord - Professionals,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Professionals
+Furnished Finder,755-457-3980,162681832251,Landlord - Short Term,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Short+Term
+Furnished Finder,755-457-3980,162681832291,Landlord - Students,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Students
+Furnished Finder,755-457-3980,162681832451,Landlord - Travel Nurse,20875774446,Search - Landlord,Enabled,Enabled,_adgroup,Landlord+-+Travel+Nurse
+Furnished Finder,755-457-3980,163353224775,Travel Nurse - Accommodations,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Accommodations
+Furnished Finder,755-457-3980,163353224815,Travel Nurse - Apartments,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Apartments
+Furnished Finder,755-457-3980,163353224855,Travel Nurse - Corporate,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Corporate
+Furnished Finder,755-457-3980,163353225015,Travel Nurse - Furnished,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Furnished
+Furnished Finder,755-457-3980,163353225055,Travel Nurse - Housing,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Housing
+Furnished Finder,755-457-3980,163353225095,Travel Nurse - Lodging,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Lodging
+Furnished Finder,755-457-3980,163353225255,Travel Nurse - Long Term,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Long+Term
+Furnished Finder,755-457-3980,163353225295,Travel Nurse - Monthly,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Monthly
+Furnished Finder,755-457-3980,163353225335,Travel Nurse - Rental,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Rental
+Furnished Finder,755-457-3980,163353225495,Travel Nurse - Room,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Room
+Furnished Finder,755-457-3980,163353225535,Travel Nurse - Short Term,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Short+Term
+Furnished Finder,755-457-3980,163353225575,Travel Nurse - Temporary,21345479974,Search - Travel Nurse FF - Travel Nurse - test max conv purchase 20240530,Enabled,Enabled,_adgroup,Travel+Nurse+-+Temporary
+Furnished Finder,755-457-3980,164161118524,Competitor - STR - STR Ban,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+STR+Ban
+Furnished Finder,755-457-3980,164161118564,Competitor - STR - VR Alternatives,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+VR+Alternatives
+Furnished Finder,755-457-3980,164161118604,Competitor - MTR - Hellolanding,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+MTR+-+Hellolanding
+Furnished Finder,755-457-3980,164161118764,Competitor - LTR - Apartmentlist,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Apartmentlist
+Furnished Finder,755-457-3980,164161118804,Competitor - STR - Airbnb,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Airbnb
+Furnished Finder,755-457-3980,164161118844,Competitor - STR - evolve,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+evolve
+Furnished Finder,755-457-3980,164161119004,Competitor - STR - Vrbo,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Vrbo
+Furnished Finder,755-457-3980,164161119044,Competitor - STR - Vacasa,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Vacasa
+Furnished Finder,755-457-3980,164161119084,Competitor - STR - Flipkey,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+STR+-+Flipkey
+Furnished Finder,755-457-3980,164161119244,Competitor - MTR - TheBlueGround,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+MTR+-+TheBlueGround
+Furnished Finder,755-457-3980,164161119284,Competitor - LTR - Zillow,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Zillow
+Furnished Finder,755-457-3980,164161119324,Competitor - LTR - Redfin,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Redfin
+Furnished Finder,755-457-3980,164161119484,Competitor - LTR - Realtor.com,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Realtor.com
+Furnished Finder,755-457-3980,164161119524,Competitor - LTR - Apartments.com,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Apartments.com
+Furnished Finder,755-457-3980,164161119564,Competitor - LTR - Homes.com,21292297809,Search - Competitors  - Purchase Max Conv,Enabled,Enabled,_adgroup,Competitor+-+LTR+-+Homes.com
+Furnished Finder,755-457-3980,168701009008,Apartments - Extended,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Apartments+-+Extended
+Furnished Finder,755-457-3980,168701009168,Apartments - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Apartments+-+Furnished
+Furnished Finder,755-457-3980,168701009208,Apartments - Weekly,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Apartments+-+Weekly
+Furnished Finder,755-457-3980,168701009248,Extended,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Extended
+Furnished Finder,755-457-3980,168701009408,Extended - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Extended+-+Furnished
+Furnished Finder,755-457-3980,168701009448,Extended - Short Term,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Extended+-+Short+Term
+Furnished Finder,755-457-3980,168701009488,Housing - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Housing+-+Furnished
+Furnished Finder,755-457-3980,168701009648,Long Term,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Long+Term
+Furnished Finder,755-457-3980,168701009688,Long Term - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Long+Term+-+Furnished
+Furnished Finder,755-457-3980,168701009728,Monthly,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Monthly
+Furnished Finder,755-457-3980,168701009888,Monthly - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Monthly+-+Furnished
+Furnished Finder,755-457-3980,168701009928,Short Term,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Short+Term
+Furnished Finder,755-457-3980,168701009968,Short Term - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Short+Term+-+Furnished
+Furnished Finder,755-457-3980,168701010128,Rental - Furnished,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Rental+-+Furnished
+Furnished Finder,755-457-3980,168701010168,Mid Term,21335303673,Search - Housing FF - Housing - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Mid+Term
+Furnished Finder,755-457-3980,168730091011,Healthcare - Housing,21345472741,Search - Healthcare  - test max conv purchase  20240530,Enabled,Enabled,_adgroup,Healthcare+-+Housing
+Furnished Finder,755-457-3980,168730091171,Healthcare - Short Term,21345472741,Search - Healthcare  - test max conv purchase  20240530,Enabled,Enabled,_adgroup,Healthcare+-+Short+Term
+Furnished Finder,755-457-3980,168730127491,Corporate,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Corporate
+Furnished Finder,755-457-3980,168730127651,Corporate - Extended,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Corporate+-+Extended
+Furnished Finder,755-457-3980,168730127691,Corporate - Furnished,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Corporate+-+Furnished
+Furnished Finder,755-457-3980,168730127731,Corporate - Long Term,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Corporate+-+Long+Term
+Furnished Finder,755-457-3980,168730127891,Corporate - Short Term,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Corporate+-+Short+Term
+Furnished Finder,755-457-3980,168730127931,Executive - Apartments,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Executive+-+Apartments
+Furnished Finder,755-457-3980,168730127971,Professionals,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Professionals
+Furnished Finder,755-457-3980,168730128131,Professionals - Furnished,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Professionals+-+Furnished
+Furnished Finder,755-457-3980,168730128171,Professionals - Short Term,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Professionals+-+Short+Term
+Furnished Finder,755-457-3980,168730128211,Professionals - Temporary,21341545397,Search - Corporate FF - Corporate - test mobile modifier 20240530,Enabled,Enabled,_adgroup,Professionals+-+Temporary
+Travel Nurse Housing,773-103-2510,152455046852,Travel nurse rentals,19870687918,TNH - Rentals  - Impr Share Bidding Exp,Enabled,Enabled,_adgroup,Travel+nurse+rentals
+Travel Nurse Housing,773-103-2510,154876740617,Landlord,20875833798,TNH - Search - Landlord,Enabled,Enabled,_adgroup,Landlord
+Travel Nurse Housing,773-103-2510,154876740897,Accommodations,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Accommodations
+Travel Nurse Housing,773-103-2510,154876740937,Apartments,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Apartments
+Travel Nurse Housing,773-103-2510,154876741097,Corporate,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Corporate
+Travel Nurse Housing,773-103-2510,154876741137,Furnished,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Furnished
+Travel Nurse Housing,773-103-2510,154876741177,Furnished Apartments,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Furnished+Apartments
+Travel Nurse Housing,773-103-2510,154876741337,Housing,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Housing
+Travel Nurse Housing,773-103-2510,154876741377,Monthly,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Monthly
+Travel Nurse Housing,773-103-2510,154876741417,Places,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Places
+Travel Nurse Housing,773-103-2510,154876741577,Room,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Room
+Travel Nurse Housing,773-103-2510,154876741617,Short Term,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Short+Term
+Travel Nurse Housing,773-103-2510,154876741657,Sites,20882398478,TNH - Search - Travel Nurse Housing,Enabled,Enabled,_adgroup,Sites
+Travel Nurse Housing,773-103-2510,155640193806,Travel Nurse Housing,20875833783,TNH - Search - Brand,Enabled,Enabled,_adgroup,Travel+Nurse+Housing
+Travel Nurse Housing,773-103-2510,163301109481,Landlord,21087711070,TNH - Search - Landlord  - Broad Included,Enabled,Enabled,_adgroup,Landlord

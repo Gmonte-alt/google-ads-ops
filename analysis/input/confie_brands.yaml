@@ -1,0 +1,875 @@
+# Confie Brand Negative Keyword Configuration
+# =============================================
+# Sources:
+#   - User-provided subsidiary list
+#   - Vern Fonk Affiliate Disclosure (https://www.vernfonk.com/affiliated-companies/, last updated 2025-04-11)
+#   - Freeway Affiliate Disclosure (https://www.freeway.com/affiliate-disclosure/)
+#   - Confie Wikipedia (https://en.wikipedia.org/wiki/Confie)
+#   - Confie press releases (confie.com/newsroom/)
+#
+# Schema per brand:
+#   canonical:        Official brand name (used as the source label in output)
+#   aliases:          List of phrases to match in queries (whole-word, case-insensitive)
+#   legal_entities:   Registered LLC/Inc names (matched as phrases, separate match list)
+#   disqualifiers:    If any of these phrases appears anywhere in the query, the match is discarded
+#                     (used for ambiguous brand fragments that collide with other companies/places)
+#   require_context:  If set, an alias only counts as a match when one of these context words also
+#                     appears in the query. Used for highly-ambiguous tokens (e.g. "harmony", "bower")
+#   broad_safe:       true if the brand is distinctive enough to be safely negated as Broad Match
+#                     (multi-word, unambiguous). Defaults to false.
+
+# ============================================================================
+# PARENT COMPANY
+# ============================================================================
+- canonical: Confie
+  aliases: [confie, confie seguros, confie insurance]
+  legal_entities: [Confie Estrella Inc, Confie Premium Finance LLC, Confie Digital Services]
+  disqualifiers: []
+  broad_safe: true
+
+# ============================================================================
+# MAJOR RETAIL BRANDS
+# ============================================================================
+- canonical: Freeway Insurance
+  aliases: [freeway insurance, freeway home insurance, freeway auto insurance, freeway seguros, freeway agency]
+  legal_entities:
+    - Freeway Managing General Agency LLC
+    - Freeway Insurance Services America LLC
+    - Freeway Insurance Services of New Jersey LLC
+  disqualifiers:
+    # Highway/road references — "freeway" alone is a road, not the brand
+    - freeway 183
+    - freeway 405
+    - freeway 101
+    - freeway 5
+    - freeway 10
+    - freeway 110
+    - freeway 210
+    - freeway 605
+    - freeway 710
+    - freeway exit
+    - freeway blvd
+    - freeway boulevard
+    - freeway ave
+    - freeway avenue
+    - freeway road
+    - freeway closure
+    - freeway traffic
+    - freeway accident
+    - freeway crash
+  broad_safe: false  # "freeway" alone is too ambiguous
+
+- canonical: InsureOne
+  aliases: [insureone, insure one, insurance one, insureone insurance, insure one insurance]
+  legal_entities: [InsureOne Insurance Services America LLC]
+  disqualifiers:
+    - oneida
+    - oneonta
+    - one ida
+    - oneill
+    - "insurance one stop"
+    - "one insurance company"
+  broad_safe: false
+
+- canonical: Bluefire Insurance
+  aliases: [bluefire, blue fire, bluefire insurance, blue fire insurance]
+  legal_entities:
+    - Bluefire Insurance Intermediaries LLC
+    - Bluefire Insurance Services LLC
+    - Bluefire Claim Services LLC
+    - Aggressive Insurance Services LLC
+    - All Star General Insurance Agency Inc
+    - American Agencies Insurance Services LLC
+    - Multi State General Agency Inc
+    - Star Canyon Insurance Services LLC
+    - Tejas Seguros LLC
+  disqualifiers: [blue fire pottery, blue fire grill, blue fire restaurant, blue fire opal]
+  broad_safe: true
+
+- canonical: Cost-U-Less Insurance
+  aliases: [cost-u-less, cost u less, costuless, cost u less insurance, cost-u-less insurance]
+  legal_entities: [Cost-U-Less Insurance Center]
+  disqualifiers:
+    # Cost-U-Less is also a discount retail chain in the Pacific/Caribbean
+    - cost u less store
+    - cost u less grocery
+    - cost u less guam
+    - cost u less hawaii
+    - cost u less alaska
+    - cost u less curacao
+  broad_safe: true
+
+- canonical: Baja Auto Insurance
+  aliases: [baja auto, baja auto insurance, baja insurance, baja insurance services]
+  legal_entities: [Baja Insurance Services]
+  disqualifiers:
+    # Baja = Mexican peninsula; common geographic confusion
+    - baja california
+    - baja mexico
+    - baja peninsula
+    - baja fresh
+    - baja blast
+    - baja sur
+    - baja norte
+    - baja race
+    - baja 1000
+    - baja designs
+    - baja bug
+    - baja rack
+    - "mexican insurance for baja"
+    - "insurance for baja trip"
+    - "insurance for baja california"
+  broad_safe: false
+
+- canonical: USAgencies
+  aliases: [us agencies, usagencies, us agencies insurance, usagencies insurance, us agency insurance]
+  legal_entities: []
+  disqualifiers:
+    - us government agencies
+    - us federal agencies
+    - us intelligence agencies
+    - us credit reporting agencies
+    - us collection agencies
+    - us travel agencies
+    - us staffing agencies
+    - us news agencies
+  broad_safe: false
+
+- canonical: Vern Fonk
+  aliases: [vern fonk, vernfonk, vern fonk insurance, fonk insurance]
+  legal_entities: [Vern Fonk Insurance Services]
+  disqualifiers: []
+  broad_safe: true
+
+- canonical: Acceptance Insurance
+  aliases: [acceptance insurance, acceptance auto insurance, acceptance auto]
+  legal_entities: [Acceptance Insurance Agency of Tennessee Inc]
+  disqualifiers:
+    - acceptance letter
+    - acceptance rate
+    - "policy acceptance"
+    - "acceptance of policy"
+    - "acceptance of insurance"
+  broad_safe: true
+
+- canonical: Estrella Insurance
+  aliases: [estrella, estrella insurance, estrella seguros, estrellas insurance]
+  legal_entities: [Confie Estrella Inc, Estrella Franchising LLC, Estrella General Agency LLC]
+  disqualifiers:
+    # "Estrella" is Spanish for "star" — many false positives
+    - estrella tv
+    - estrella jalisco
+    - estrella beer
+    - estrella damm
+    - estrella mountain
+    - estrella galicia
+    - estrella war
+    - la estrella
+    - estrella restaurant
+    - estrella foods
+    - estrella media
+  broad_safe: false
+
+- canonical: OneSource Dealer Services
+  aliases: [onesource, one source, onesource dealer, one source dealer, onesource insurance, onesource dealer services, cartel insurance, cartel insurance services]
+  legal_entities: [OneSource Dealer Services LLC]
+  disqualifiers:
+    - onesource erp
+    - onesource tax
+    - onesource virtual
+    - onesource staffing
+    - onesource thomson reuters
+    - one source background
+    - one source talent
+    - "your one source"
+    - "the one source"
+  require_context: [insurance, dealer, auto, car, policy, quote]
+  broad_safe: false
+
+- canonical: Seguros Sin Barreras
+  aliases: [seguros sin barreras, sin barreras insurance, sin barreras seguros]
+  legal_entities: [SSB Insurance Services LLC]
+  disqualifiers: []
+  broad_safe: true
+
+- canonical: Westline Insurance
+  aliases: [westline, westline insurance, west line insurance]
+  legal_entities: []
+  disqualifiers: [westline trucking, westline transport, westline products, westline mining]
+  broad_safe: false
+
+
+
+  # ============================================================================
+# REGIONAL / ACQUIRED AGENCIES (from user list + affiliate disclosures)
+# ============================================================================
+- canonical: TGS Insurance
+  aliases: [tgs, tgs insurance, tgs agency]
+  legal_entities: []
+  disqualifiers: [tgs nopec, tgs salaries, tgs energy, tgs geophysical, tgs stock]
+  require_context: [insurance, agency, policy, quote]
+  broad_safe: false
+
+- canonical: Eguino Insurance
+  aliases: [eguino, equino, eguino insurance, eguino and associates, eguino & associates]
+  legal_entities: [Eguino & Associates Insurance Agency]
+  disqualifiers:
+    # "equino" near "equinox" is a very common typo cluster
+    - equinox
+    - chevy equinox
+    - chevrolet equinox
+    - equinox chevy
+    - equinox chevrolet
+    - equinox gym
+    - equinox fitness
+    - equinox hotel
+    - equinox suv
+    - 2024 equinox
+    - 2025 equinox
+    - 2026 equinox
+    - equinoctial
+  broad_safe: false
+
+- canonical: Sullivan Insurance
+  aliases: [sullivan insurance, sullivan agency, james sullivan insurance, james s sullivan, james s. sullivan]
+  legal_entities: [James S. Sullivan Agency]
+  disqualifiers: []
+  require_context: [insurance, agency, policy, quote]
+  broad_safe: false
+
+- canonical: Most Insurance
+  aliases: [most insurance]
+  legal_entities: []
+  disqualifiers:
+    # "most insurance" is a very common phrase fragment
+    - "most insurance companies"
+    - "most insurance policies"
+    - "most insurance providers"
+    - "most insurance plans"
+    - "most insurance quotes"
+    - "most insurance carriers"
+    - "for most insurance"
+    - "what most insurance"
+    - "do most insurance"
+    - "does most insurance"
+    - "is most insurance"
+    - "are most insurance"
+    - "the most insurance"
+    - "best most insurance"
+  broad_safe: false  # extremely high false-positive risk
+
+- canonical: Harmony Insurance
+  aliases: [harmony insurance, harmony agency]
+  legal_entities: []
+  disqualifiers:
+    - harmony korine
+    - harmony os
+    - harmony health
+    - harmony hospice
+    - harmony school
+    - harmony california
+    - harmony pa
+    - harmony fl
+    - harmony town
+    - harmony homes
+    - harmony grove
+  require_context: [insurance, agency, policy, quote]
+  broad_safe: false
+
+- canonical: Osorio Insurance
+  aliases: [osorio insurance, osorio agency, osorio seguros]
+  legal_entities: []
+  disqualifiers: []
+  require_context: [insurance, agency, seguros, policy, quote]
+  broad_safe: false
+
+- canonical: EZ Insurance
+  aliases: [ez insurance, e-z insurance, easy insurance agency]
+  legal_entities: []
+  disqualifiers: [ez pass, ez go, ezgo, ez bake, ez lynk, ez tag]
+  broad_safe: false
+
+- canonical: Action Auto Insurance
+  aliases: [action auto, action auto insurance, action insurance]
+  legal_entities: []
+  disqualifiers:
+    - action auto parts
+    - action auto repair
+    - action auto sales
+    - action auto body
+    - action auto glass
+    - action auto wreckers
+  require_context: [insurance, policy, quote, sr22, sr-22]
+  broad_safe: false
+
+- canonical: Wise Insurance
+  aliases: [wise insurance, wise auto, wise auto insurance, wise agency]
+  legal_entities: []
+  disqualifiers:
+    - wise county
+    - wise virginia
+    - wise va
+    - wise transfer
+    - wise app
+    - wise transferwise
+    - wise bank
+    - wise food
+    - wise snacks
+    - wise potato
+    - wise auto sales
+    - wise auto repair
+    - wise auto group
+    - wise auto parts
+  require_context: [insurance, policy, quote, sr22]
+  broad_safe: false
+
+- canonical: Insurance Now
+  aliases: [insurance now]
+  legal_entities: []
+  disqualifiers:
+    # "insurance now" is an extremely common phrase
+    - "need insurance now"
+    - "buy insurance now"
+    - "get insurance now"
+    - "want insurance now"
+    - "insurance now what"
+    - "insurance now or"
+    - "insurance now vs"
+    - "no insurance now"
+    - "insurance now and"
+    - "insurance now i"
+    - "insurance now they"
+  broad_safe: false  # Effectively only safe as exact match
+
+- canonical: Parietti Insurance
+  aliases: [parietti, parietti insurance, parietti and mcguire, parietti & mcguire, parietti mcguire]
+  legal_entities: [Parietti & Mcguire Insurance Services]
+  disqualifiers: []
+  broad_safe: true
+
+- canonical: Trinity Insurance
+  aliases: [trinity insurance, trinity insurance agency]
+  legal_entities: []
+  disqualifiers:
+    - trinity college
+    - trinity health
+    - trinity hospital
+    - trinity church
+    - trinity texas
+    - trinity county
+    - trinity industries
+    - trinity rail
+    - trinity broadcasting
+    - trinity tbn
+    - trinity university
+  require_context: [insurance, agency, policy, quote]
+  broad_safe: false
+
+- canonical: Family Auto Insurance
+  aliases: [family auto, family auto insurance]
+  legal_entities: []
+  disqualifiers:
+    # CRITICAL: "American Family" is a major competitor — always disqualify
+    - american family
+    - american family auto
+    - american family insurance
+    - amfam
+    - family auto sales
+    - family auto repair
+    - family auto group
+    - family auto body
+    - family auto mart
+    - family auto care
+    - "family of auto insurance"
+    - "family on auto insurance"
+    - "family member auto insurance"
+    - "family plan auto insurance"
+  broad_safe: false  # MUST be phrase or exact only
+
+- canonical: Hulme Insurance
+  aliases: [hulme insurance, hulme agency]
+  legal_entities: []
+  disqualifiers: [hulme court, hulme manchester, hulme uk, tom hulme]
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Becker Insurance
+  aliases: [becker insurance, becker agency]
+  legal_entities: []
+  disqualifiers:
+    - boris becker
+    - becker furniture
+    - becker college
+    - becker county
+    - becker minnesota
+    - becker professional
+    - becker cpa
+    - becker auto
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Moose Insurance
+  aliases: [moose insurance, moose insurance agency]
+  legal_entities: []
+  disqualifiers:
+    - moose lodge
+    - bullwinkle
+    - moose tracks
+    - "moose attack"
+    - "moose hunting"
+    - "moose meat"
+    - "moose head"
+    - moose jaw
+    - moose wyoming
+    - moose alaska
+    - moose maine
+    - moose canada
+    - mooses
+  require_context: [insurance, agency, policy, quote]
+  broad_safe: false
+
+- canonical: ExpressLink Insurance
+  aliases: [expresslink, express link, expresslink insurance, express link insurance]
+  legal_entities: []
+  disqualifiers: [expresslink dmv, expresslink vpn]
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Eastern General Insurance
+  aliases: [eastern general, eastern general insurance, eastern general agency]
+  legal_entities: []
+  disqualifiers: [eastern general hospital, eastern general store]
+  require_context: [insurance, agency]
+  broad_safe: true
+
+- canonical: De France Insurance
+  aliases: [defranco, defrance, de france insurance, de franco insurance, defranco insurance, defrance insurance]
+  legal_entities: [De France Insurance Agency]
+  disqualifiers: [tour de france, vive la france, de france restaurant, de france bakery, cafe de france]
+  require_context: [insurance, agency]
+  broad_safe: false
+
+- canonical: Bronkie Insurance
+  aliases: [bronkie, bronkie insurance, bronkie insurance agency]
+  legal_entities: [Bronkie Insurance Agency]
+  disqualifiers: [bronkie game, bronkie bronchiasaurus]
+  broad_safe: true
+
+- canonical: Ida Tunnell Insurance
+  aliases: [ida tunnell, ida tunnell insurance, tunnell insurance]
+  legal_entities: []
+  disqualifiers: []
+  broad_safe: true
+
+- canonical: Bower Insurance
+  aliases: [bower insurance, bower agency]
+  legal_entities: [Bower Insurance]
+  disqualifiers: [bower bird, bowerbird, bower studio, bower software, jack bower, jack bauer, bower house, bower wood]
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Coppola Insurance
+  aliases: [carallo, coppola insurance, coppola agency]   # "carallo" per user — flag as likely Coppola variant
+  legal_entities: [Coppola Insurance Agency]
+  disqualifiers:
+    - francis ford coppola
+    - sofia coppola
+    - coppola wine
+    - coppola winery
+    - coppola movie
+    - coppola film
+    - coppola director
+    - godfather
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Speedlane Insurance
+  aliases: [speedlane, speed lane, speedlane insurance]
+  legal_entities: [Speedlane Insurance Services]
+  disqualifiers: [speedlane bowling, speedlane game]
+  broad_safe: true
+
+- canonical: Cannello Insurance
+  aliases: [cannello, cannello insurance]
+  legal_entities: []
+  disqualifiers: []
+  require_context: [insurance, agency]
+  broad_safe: false
+
+- canonical: Texas Auto Insurance
+  aliases: [texas auto insurance]
+  legal_entities: []
+  disqualifiers:
+    # "texas auto" is far too generic
+    - texas auto sales
+    - texas auto repair
+    - texas auto parts
+    - texas auto title
+    - texas auto registration
+    - texas auto inspection
+    - texas auto loan
+    - texas auto trader
+    - texas auto direct
+    - texas auto group
+    - texas auto mall
+    - texas auto outlet
+  broad_safe: false
+
+- canonical: Briar Way Insurance
+  aliases: [briar way, briarway, briar way insurance]
+  legal_entities: []
+  disqualifiers: [briarway lane, briar way road, briar way drive]
+  require_context: [insurance, agency]
+  broad_safe: false
+
+- canonical: Salemo Insurance
+  aliases: [salemo, salemo insurance]
+  legal_entities: []
+  disqualifiers: [salem oregon, salemo restaurant, salem o]
+  require_context: [insurance, agency]
+  broad_safe: false
+
+- canonical: Absolute Insurance
+  aliases: [absolute insurance, absolute insurance agency]
+  legal_entities: []
+  disqualifiers:
+    - absolute vodka
+    - absolut vodka
+    - absolute zero
+    - absolute value
+    - absolute beginners
+    - absolute power
+    - absolute dental
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Palmetto Insurance
+  aliases: [palmetto insurance, palmetto agency]
+  legal_entities: []
+  disqualifiers:
+    - palmetto tree
+    - palmetto bug
+    - palmetto state
+    - palmetto florida
+    - palmetto health
+    - palmetto bluff
+    - palmetto gba
+    - palmetto medicare
+    - palmetto sc
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Duane Sammons Insurance
+  aliases: [duane sammons, sammons insurance, duane sammons insurance]
+  legal_entities: []
+  disqualifiers: [sammons financial, sammons annuity]
+  broad_safe: true
+
+- canonical: Van Robinson Insurance
+  aliases: [van robinson, van robinson insurance]
+  legal_entities: []
+  disqualifiers: [van robinson nfl, van robinson syracuse, van robinson football]
+  require_context: [insurance, agency]
+  broad_safe: false
+
+- canonical: Fast Quote Insurance
+  aliases: [fast quote insurance, fast quote agency]
+  legal_entities: []
+  disqualifiers:
+    # "fast quote" is a generic phrase used by every insurer
+    - "fast quote tool"
+    - "get a fast quote"
+    - "for a fast quote"
+    - "request a fast quote"
+    - "fast quote online"
+    - "fast quote for"
+  broad_safe: false
+
+- canonical: Whitehead Insurance
+  aliases: [whitehead insurance, whitehead agency]
+  legal_entities: []
+  disqualifiers:
+    - whitehead institute
+    - colson whitehead
+    - whitehead acne
+    - whitehead removal
+    - whitehead pimple
+    - whitehead torpedo
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Axiom Insurance
+  aliases: [axiom, axiom insurance, axiom insurance agency]
+  legal_entities: []
+  disqualifiers:
+    - axiom space
+    - axiom mission
+    - axiom verge
+    - axiom communications
+    - axiom mattress
+    - axiom bank
+    - axiom telecom
+    - axiom learning
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: West Coast Insurance
+  aliases: [west coast insurance, westcoast insurance]
+  legal_entities: []
+  disqualifiers:
+    - west coast customs
+    - west coast offense
+    - west coast rap
+    - west coast hip hop
+    - west coast eagles
+    - west coast swing
+    - west coast university
+    - west coast time
+    - west coast weather
+    - west coast trail
+  broad_safe: false
+
+- canonical: Schmitt Insurance
+  aliases: [schmitt insurance, schmitt agency]
+  legal_entities: []
+  disqualifiers: [mr schmitt, eric schmitt, schmitt music, schmitt trigger, schmitt stix]
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Capital Insurance
+  aliases: [capital insurance, capital insurance group, capital insurance agency]
+  legal_entities: []
+  disqualifiers:
+    # Generic word; many real insurers also use "Capital"
+    - capital one
+    - capital one insurance
+    - capital gains
+    - capital city
+    - capital region
+    - "working capital"
+    - "venture capital"
+    - "capital of"
+    - capital health
+    - capital blue cross
+    - capital bluecross
+    - "capitol insurance"
+  broad_safe: false
+
+- canonical: Bradley Insurance
+  aliases: [bradley insurance, bradley insurance agency]
+  legal_entities: []
+  disqualifiers:
+    - bradley cooper
+    - bradley airport
+    - bradley university
+    - bradley method
+    - bradley fighting vehicle
+    - bill bradley
+    - bradley beal
+    - bradley smoker
+    - bradley county
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Deborah Ann Insurance
+  aliases: [deborah ann, deborah ann insurance]
+  legal_entities: []
+  disqualifiers: [deborah ann woll, deborah ann ryan, deborah ann fisher]
+  require_context: [insurance, agency]
+  broad_safe: false
+
+- canonical: NII Brokerage
+  aliases: [nii brokerage, nii insurance, n.i.i. brokerage]
+  legal_entities: []
+  disqualifiers: [nii holdings, nii nextel]
+  broad_safe: true
+
+- canonical: Power Auto Insurance
+  aliases: [power auto insurance, power auto agency]
+  legal_entities: []
+  disqualifiers:
+    - power auto sales
+    - power auto group
+    - power auto repair
+    - power auto parts
+    - "horsepower auto"
+    - power steering
+    - "auto power"
+  broad_safe: false
+
+- canonical: Affiliated Insurance
+  aliases: [affiliated insurance, affiliated insurance agency, affiliated insurance group]
+  legal_entities: []
+  disqualifiers:
+    - "affiliated insurance company of america"
+    - affiliated computer
+    - affiliated foods
+    - affiliated managers
+    - affiliated marketing
+  require_context: [agency, confie]
+  broad_safe: false
+
+# ============================================================================
+# ADDITIONAL CONFIE BRANDS FROM AFFILIATE DISCLOSURES
+# (Not on user's original list but legally part of Confie — included so SQR
+# data surfaces them. Review Needs_Review tab to confirm whether to negate.)
+# ============================================================================
+- canonical: Sanborn's Insurance
+  aliases: [sanborns insurance, sanborn's insurance, sanborn insurance, arriba insurance]
+  legal_entities: [Sanborn's Insurance Services LLC]
+  disqualifiers: [sanborn map, sanborn maps, sanborn restaurant, sanborns mexico]
+  broad_safe: false
+
+- canonical: Atlantic Insurance Agency
+  aliases: [atlantic insurance agency, atlantic insurance chicago]
+  legal_entities: []
+  disqualifiers: [atlantic insurance company, atlantic insurance bermuda, atlantic insurance cyprus]
+  require_context: [chicago, confie, freeway]
+  broad_safe: false
+
+- canonical: Velox Insurance
+  aliases: [velox insurance, velox franchise]
+  legal_entities: [Velox Insurance LLC, Velox Franchise Company LLC]
+  disqualifiers: [velox bike, velox cycling, velox tape]
+  broad_safe: true
+
+- canonical: Oasis Insurance
+  aliases: [oasis insurance, oasis insurance agency]
+  legal_entities: []
+  disqualifiers:
+    - oasis band
+    - oasis rock
+    - oasis water
+    - oasis pool
+    - oasis hotel
+    - oasis resort
+    - oasis vegas
+    - liam gallagher
+    - noel gallagher
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Southern Harvest Insurance
+  aliases: [southern harvest, southern harvest insurance]
+  legal_entities: [Southern Harvest Property & Casualty Inc]
+  disqualifiers: [southern harvest farm, southern harvest restaurant, southern harvest market]
+  broad_safe: true
+
+- canonical: Mega Insurance
+  aliases: [mega insurance]
+  legal_entities: []
+  disqualifiers: [megabus, mega millions, mega man, megaman, mega church, "mega insurance company", mega bloks]
+  require_context: [agency, confie, freeway]
+  broad_safe: false
+
+- canonical: Bridgepoint Insurance
+  aliases: [bridgepoint insurance, bridgepoint agency, bridgepoint permit]
+  legal_entities: []
+  disqualifiers: [bridgepoint education, ashford university, bridgepoint church, bridgepoint hospital]
+  require_context: [insurance, dmv, permit, mcallen]
+  broad_safe: false
+
+- canonical: Apollo Insurance
+  aliases: [apollo insurance, apollo insurance services]
+  legal_entities: [Apollo Insurance Services]
+  disqualifiers:
+    - apollo 11
+    - apollo 13
+    - apollo theater
+    - apollo greek
+    - apollo mission
+    - apollo creed
+    - apollo nida
+    - apollo global
+    - apollo tyres
+    - apollo hospital
+    - apollo justice
+  require_context: [insurance, agency, policy]
+  broad_safe: false
+
+- canonical: Belfield Insurance
+  aliases: [belfield insurance, belfield agency]
+  legal_entities: []
+  disqualifiers: [belfield north dakota, belfield nd]
+  require_context: [insurance, agency, new york]
+  broad_safe: false
+
+- canonical: Buschbach Insurance
+  aliases: [buschbach, buschbach insurance, buschbach payment]
+  legal_entities: [Buschbach Insurance Agency]
+  disqualifiers: []
+  broad_safe: true
+
+- canonical: US1 Insurance
+  aliases: [us1 insurance, us 1 insurance]
+  legal_entities: []
+  disqualifiers: ["us 1 highway", "us route 1", "us-1 florida"]
+  broad_safe: false
+
+- canonical: Affordable Insurance
+  aliases: [affordable insurance hendersonville]
+  legal_entities: []
+  disqualifiers:
+    # "affordable insurance" is too generic to negate broadly
+    - "cheap and affordable insurance"
+    - "find affordable insurance"
+    - "looking for affordable insurance"
+  require_context: [hendersonville, confie]
+  broad_safe: false
+
+# ============================================================================
+# COMPETITOR BRANDS (used to flag MIXED queries — never to negate)
+# ============================================================================
+# A search containing both a Confie brand and a competitor reflects comparison
+# intent or confusion, not pure brand-poaching. These go to a Mixed_Queries
+# review tab so a human can decide whether to negate or keep bidding.
+- canonical: __COMPETITOR__
+  aliases:
+    - state farm
+    - statefarm
+    - geico
+    - progressive insurance
+    - progressive auto
+    - allstate
+    - all state insurance
+    - liberty mutual
+    - farmers insurance
+    - farmers auto
+    - usaa
+    - nationwide insurance
+    - nationwide auto
+    - american family
+    - amfam
+    - american family insurance
+    - travelers insurance
+    - the general
+    - the general insurance
+    - the general auto
+    - root insurance
+    - lemonade insurance
+    - metromile
+    - mercury insurance
+    - infinity insurance
+    - direct auto
+    - direct general
+    - safeco
+    - hartford insurance
+    - the hartford
+    - aaa insurance
+    - "triple a insurance"
+    - esurance
+    - 21st century insurance
+    - kemper insurance
+    - dairyland insurance
+    - elephant insurance
+    - good2go
+    - good 2 go insurance
+    - "good to go insurance"
+    - bristol west
+    - national general
+    - clearcover
+    - safeauto
+    - safe auto insurance
+  legal_entities: []
+  disqualifiers: []
+  broad_safe: false

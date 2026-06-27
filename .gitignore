@@ -1,0 +1,45 @@
+google-ads.yaml
+client_secret.json
+.env
+*.json
+
+# Output files
+reports/output/
+ga4-reports/output/
+
+# Databases — NEVER commit (paid_search.db is ~8GB; GitHub rejects >100MB)
+*.db
+*.db-wal
+*.db-shm
+db/
+
+# Outputs (all locations)
+output/
+*/output/
+*.xlsx
+
+# Input data CSVs (but keep config YAML — see exception below)
+analysis/input/*.csv
+
+# Keep config that lives under input
+!analysis/input/confie_brands.yaml
+
+# ga4 credentials
+ga4-reports/credentials/
+
+# --- Allowlist: ignore everything, then re-include source + config only ---
+*
+!*/
+!*.py
+!*.md
+!*.yaml
+!*.yml
+!*.sql
+!.gitignore
+
+# --- Re-exclude secrets that WOULD match the allowlist above ---
+google-ads.yaml
+**/google-ads.yaml
+.env
+**/credentials/
+*client_secret*

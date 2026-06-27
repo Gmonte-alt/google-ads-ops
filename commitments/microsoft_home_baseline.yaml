@@ -1,0 +1,37 @@
+microsoft_home_geo_tiers:
+  baseline_date: '2026-05-24'
+  baseline_model: C2_weighted_kmeans
+  baseline_blend: 0.6
+  baseline_k: 6
+  commitments:
+    Illinois: TIER ONE
+    Colorado: TIER ONE
+    Oregon: TIER ONE
+    New Jersey: TIER ONE
+    Massachusetts: TIER TWO
+    Missouri: TIER TWO
+    Texas: TIER TWO
+    Minnesota: TIER TWO
+    Arizona: TIER THREE
+    Oklahoma: TIER THREE
+    Tennessee: TIER THREE
+    Arkansas: TIER THREE
+    Ohio: TIER THREE
+    Wisconsin: TIER THREE
+    Georgia: TIER THREE
+    Maryland: TIER THREE
+    Pennsylvania: TIER FOUR
+    Virginia: TIER FOUR
+    Alabama: TIER FIVE
+    Indiana: TIER FIVE
+    Washington: TIER FIVE
+    Michigan: TIER FIVE
+    Kentucky: TIER FIVE
+    North Carolina: TIER FIVE
+    California: TIER SIX
+    Florida: TIER SIX
+  retier_history:
+  - date: '2026-05-24'
+    reason: initial_baseline_commitment
+    changes: initial
+    states_committed: 26

@@ -1,0 +1,280 @@
+"""
+merge_brand_registry.py
+========================
+One-time utility — run once to produce 07_seed_brand_registry_v2.py,
+which merges the Medicare patch (07_seed_brand_registry_medicare_patch.py)
+directly into the main brand registry script.
+
+After running this:
+  1. Verify 07_seed_brand_registry_v2.py looks correct
+  2. Rename it to 07_seed_brand_registry.py (replace the original)
+  3. Archive 07_seed_brand_registry_medicare_patch.py to _archive/
+  4. Run: python kw_db_scripts/07_seed_brand_registry.py
+
+This script does NOT touch the database — it only produces the merged file.
+
+Usage:
+    python kw_db_scripts/merge_brand_registry.py
+"""
+
+import re
+import ast
+import sys
+from pathlib import Path
+
+BASE_PATH  = Path(r"C:\Projects\google-ads-ops\kw_db_scripts\07_seed_brand_registry.py")
+PATCH_PATH = Path(r"C:\Projects\google-ads-ops\kw_db_scripts\07_seed_brand_registry_medicare_patch.py")
+OUT_PATH   = Path(r"C:\Projects\google-ads-ops\kw_db_scripts\07_seed_brand_registry_v2.py")
+
+
+def extract_list(source: str, var_name: str) -> str:
+    """
+    Extracts the full literal text of a top-level list assignment
+    (e.g. MEDICARE_BRAND_DATA = [ ... ]) from source code.
+    Returns the content between the outermost brackets, inclusive.
+    """
+    pattern = rf'^{var_name}\s*=\s*(\[)'
+    m = re.search(pattern, source, re.MULTILINE)
+    if not m:
+        return None
+
+    start = m.start(1)   # position of opening '['
+    depth = 0
+    for i, ch in enumerate(source[start:], start):
+        if ch == '[':
+            depth += 1
+        elif ch == ']':
+            depth -= 1
+            if depth == 0:
+                return source[start:i+1]
+    return None
+
+
+def extract_function(source: str, func_name: str) -> str:
+    """
+    Extracts the full text of a top-level function definition from source.
+    """
+    pattern = rf'^def {func_name}\('
+    m = re.search(pattern, source, re.MULTILINE)
+    if not m:
+        return None
+
+    start = m.start()
+    lines = source[start:].splitlines(keepends=True)
+    result = []
+    in_func = False
+    for line in lines:
+        if not in_func:
+            in_func = True
+        elif line and not line[0].isspace() and line.strip():
+            # Back at top-level indent — function ended
+            break
+        result.append(line)
+    return ''.join(result).rstrip()
+
+
+def main():
+    for p in [BASE_PATH, PATCH_PATH]:
+        if not p.exists():
+            print(f"ERROR: file not found: {p}")
+            sys.exit(1)
+
+    base_src  = BASE_PATH.read_text(encoding='utf-8')
+    patch_src = PATCH_PATH.read_text(encoding='utf-8')
+
+    # ── Extract Medicare content from patch ───────────────────────────
+    medicare_brand_data   = extract_list(patch_src, 'MEDICARE_BRAND_DATA')
+    medicare_supplemental = extract_list(patch_src, 'MEDICARE_SUPPLEMENTAL')
+    patch_verticals_fn    = extract_function(patch_src, 'patch_existing_brand_verticals')
+
+    if not medicare_brand_data:
+        print("ERROR: could not extract MEDICARE_BRAND_DATA from patch file")
+        sys.exit(1)
+    if not medicare_supplemental:
+        print("ERROR: could not extract MEDICARE_SUPPLEMENTAL from patch file")
+        sys.exit(1)
+
+    print(f"  Extracted MEDICARE_BRAND_DATA      : {medicare_brand_data.count('carrier_')} carrier entries (approx)")
+    print(f"  Extracted MEDICARE_SUPPLEMENTAL    : {medicare_supplemental.count('None)')} variants (approx)")
+    print(f"  Extracted patch_existing_brand_verticals: {'yes' if patch_verticals_fn else 'no'}")
+
+    # ── Build the merged source ────────────────────────────────────────
+    # Strategy:
+    # 1. Update the docstring version header
+    # 2. Append MEDICARE_BRAND_DATA after BRAND_DATA closes
+    # 3. Append MEDICARE_SUPPLEMENTAL after SUPPLEMENTAL closes in seed_supplemental_variants
+    # 4. Patch main() to call both datasets and run vertical patches
+
+    merged = base_src
+
+    # 1. Update docstring version marker
+    merged = merged.replace(
+        '01_create_schema.py  [v4',
+        '01_create_schema.py  [v4',  # no-op guard
+    )
+    merged = re.sub(
+        r'(07_seed_brand_registry\.py)',
+        r'07_seed_brand_registry.py  [v2 — Medicare patch merged]',
+        merged,
+        count=1,
+    )
+
+    # 2. Inject MEDICARE_BRAND_DATA block immediately after BRAND_DATA closes
+    #    Find the end of the BRAND_DATA list (last ']' before 'def normalize')
+    brand_data_end = re.search(
+        r'(\]\s*\n)\s*\n\s*def normalize',
+        merged
+    )
+    if not brand_data_end:
+        print("ERROR: could not locate end of BRAND_DATA list — check source")
+        sys.exit(1)
+
+    insert_pos = brand_data_end.start(1) + len(brand_data_end.group(1))
+    medicare_brand_block = (
+        "\n\n# ===========================================================================\n"
+        "# MEDICARE BRANDS — merged from 07_seed_brand_registry_medicare_patch.py\n"
+        "# Do NOT edit this section manually — it is generated by merge_brand_registry.py\n"
+        "# To add Medicare brands, add them here and re-run 07_seed_brand_registry.py\n"
+        "# ===========================================================================\n\n"
+        f"MEDICARE_BRAND_DATA = {medicare_brand_data}\n"
+    )
+    merged = merged[:insert_pos] + medicare_brand_block + merged[insert_pos:]
+
+    # 3. Inject MEDICARE_SUPPLEMENTAL after the SUPPLEMENTAL list inside
+    #    seed_supplemental_variants(). Find the end of the SUPPLEMENTAL list.
+    supp_end = re.search(
+        r"(        \('cfpnet'.*?\)\s*\n)"
+        r"(\s*\]\s*\n)",
+        merged,
+        re.DOTALL,
+    )
+
+    # Fallback: find end of SUPPLEMENTAL by locating the closing ] before
+    # the for-loop that iterates over it
+    if not supp_end:
+        # Find the for loop that follows SUPPLEMENTAL
+        supp_end = re.search(
+            r"(\n    \]\s*\n)(\s*import re as _re)",
+            merged,
+        )
+
+    if not supp_end:
+        print("WARNING: could not auto-inject MEDICARE_SUPPLEMENTAL — appending manually")
+        medicare_supp_block = (
+            "\n\n# Medicare supplemental variants (from patch)\n"
+            f"MEDICARE_SUPPLEMENTAL = {medicare_supplemental}\n"
+        )
+        merged = merged.rstrip() + "\n" + medicare_supp_block
+    else:
+        inject_at = supp_end.end(1) if supp_end.lastindex == 1 else supp_end.end(2)
+        medicare_supp_block = (
+            "\n    # --- Medicare-specific variants (merged from patch) ---\n"
+            "    # Format: (brand_normalized_name, keyword_text, match_type)\n"
+        )
+        # Parse the medicare supplemental list and inject its contents
+        # into the existing SUPPLEMENTAL list before it closes
+        try:
+            medicare_items = ast.literal_eval(medicare_supplemental)
+            lines = []
+            for item in medicare_items:
+                brand_norm, kw_text, match_type = item
+                mt_repr = repr(match_type)
+                lines.append(
+                    f"        ({repr(brand_norm)},  {repr(kw_text)},  {mt_repr}),"
+                )
+            medicare_supp_block += '\n'.join(lines) + '\n'
+        except Exception as e:
+            print(f"WARNING: could not parse MEDICARE_SUPPLEMENTAL items ({e}) — "
+                  f"injecting as raw block")
+            medicare_supp_block += f"    # RAW BLOCK — verify manually\n"
+
+        merged = merged[:inject_at] + medicare_supp_block + merged[inject_at:]
+
+    # 4. Patch main() to:
+    #    a. Pass BRAND_DATA + MEDICARE_BRAND_DATA combined to seed_brand_registry
+    #    b. Run patch_existing_brand_verticals after seeding
+
+    # Replace the seed_brand_registry call to combine both lists
+    merged = merged.replace(
+        'brand_ids = seed_brand_registry(conn, BRAND_DATA)',
+        'brand_ids = seed_brand_registry(conn, BRAND_DATA + MEDICARE_BRAND_DATA)',
+    )
+
+    # Inject patch_verticals call after seed_supplemental_variants call in main
+    merged = merged.replace(
+        '    total_kw, skipped_kw = seed_brand_keywords_from_workbook(\n'
+        '        conn, brand_ids, WORKBOOK_PATH\n'
+        '    )',
+        '    # Patch verticals on brands whose vertical list needs medicare added\n'
+        '    # (Handles brands that predate the Medicare patch being merged in)\n'
+        '    _patch_brand_verticals(conn)\n\n'
+        '    total_kw, skipped_kw = seed_brand_keywords_from_workbook(\n'
+        '        conn, brand_ids, WORKBOOK_PATH\n'
+        '    )',
+    )
+
+    # Inject _patch_brand_verticals function before main()
+    patch_fn_code = """
+
+def _patch_brand_verticals(conn):
+    \"\"\"
+    Ensures brands already in the registry have correct verticals.
+    Runs after seed_brand_registry to catch brands that existed before
+    the Medicare patch was merged in.
+    \"\"\"
+    cursor  = conn.cursor()
+    updated = 0
+    PATCHES = [
+        ('humana',    'medicare'),
+        ('hartford',  'auto,home,medicare'),
+        ('aarp',      'auto,home,medicare'),
+        ('surebridge', 'medicare'),
+    ]
+    for norm, correct_verticals in PATCHES:
+        row = cursor.execute(
+            'SELECT id, verticals FROM brand_registry WHERE normalized_name = ?',
+            (norm,)
+        ).fetchone()
+        if not row:
+            continue
+        current = row['verticals'] or ''
+        verts_set = set(v.strip() for v in current.split(',') if v.strip())
+        correct_set = set(v.strip() for v in correct_verticals.split(',') if v.strip())
+        if correct_set.issubset(verts_set):
+            continue
+        merged = ','.join(sorted(verts_set | correct_set))
+        cursor.execute(
+            'UPDATE brand_registry SET verticals = ? WHERE normalized_name = ?',
+            (merged, norm)
+        )
+        print(f'  Patched verticals: {norm} -> {merged}')
+        updated += 1
+    conn.commit()
+    if updated == 0:
+        print('  No vertical patches needed')
+
+"""
+
+    # Insert before def main():
+    merged = merged.replace(
+        '\ndef main():\n',
+        patch_fn_code + '\ndef main():\n',
+        1,
+    )
+
+    # 5. Update vertical distribution summary to include life in the print loop
+    # (already present in base script — no change needed)
+
+    # ── Write output ──────────────────────────────────────────────────
+    OUT_PATH.write_text(merged, encoding='utf-8')
+    print(f"\n  Written to: {OUT_PATH}")
+    print(f"  File size : {OUT_PATH.stat().st_size:,} bytes")
+    print(f"\nNext steps:")
+    print(f"  1. Open {OUT_PATH.name} and verify the merged content looks correct")
+    print(f"  2. Rename to 07_seed_brand_registry.py (replace original)")
+    print(f"  3. Move original + patch to _archive/")
+    print(f"  4. python kw_db_scripts/07_seed_brand_registry.py")
+
+
+if __name__ == '__main__':
+    main()

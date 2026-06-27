@@ -1,0 +1,12 @@
+baseline_centroids:
+  baseline_date: '2026-05-24'
+  note: Tier centroids (spend-weighted ideal_tcpa per tier) frozen at baseline date.
+    Used as fixed reference points in the 'State Economics vs Cluster' diagnostic
+    sheet. To re-anchor, delete this file and rerun.
+  centroids:
+    TIER FIVE: 29.08475319800466
+    TIER FOUR: 34.7166531083898
+    TIER ONE: 67.05751945286521
+    TIER SIX: 17.662563726944036
+    TIER THREE: 38.910277459665174
+    TIER TWO: 48.859786785553275

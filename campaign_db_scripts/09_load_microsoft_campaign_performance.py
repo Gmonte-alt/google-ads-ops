@@ -224,10 +224,24 @@ KNOWN_NON_SEARCH_NETWORKS = {
 # ── Device normalization (shared with keyword loader) ─────────────────────────
 
 DEVICE_MAP = {
-    "Computer":   "DESKTOP",
-    "Smartphone": "MOBILE",
-    "Tablet":     "TABLET",
+    "Computer":      "DESKTOP",
+    "Smartphone":    "MOBILE",
+    "Tablet":        "TABLET",
+    "Connected TVs": "CONNECTED_TV",
 }
+
+
+def _validate_devices(df: pd.DataFrame, source: str = "campaign perf CSV") -> None:
+    """Hard-fail on unrecognized Device type values, rather than silently
+    defaulting them to DESKTOP. A new Microsoft device (e.g. 'Connected TVs')
+    must be added to DEVICE_MAP explicitly so it is represented as its own
+    device, not folded into an existing bucket. Matches loader 10's behavior."""
+    unmapped = set(df["Device type"].dropna().unique()) - set(DEVICE_MAP.keys())
+    if unmapped:
+        raise SystemExit(
+            f"FATAL: {source} contains unrecognized Device type(s): "
+            f"{unmapped}. Update DEVICE_MAP in 09_load_microsoft_campaign_performance.py."
+        )
 
 
 # ── Required columns — hard-fail on missing Network ───────────────────────────
@@ -435,8 +449,11 @@ def clean_performance_df(df: pd.DataFrame) -> pd.DataFrame:
         log.warning(f"  {bad_dates:,} rows with unparseable dates — dropping")
         df = df[df["report_date"].notna()].copy()
 
-    # Device
-    df["device"] = df["Device type"].map(DEVICE_MAP).fillna("DESKTOP")
+    # Device — validate first (hard-fail on unknown), then map.
+    # No silent fillna: an unmapped device must be added to DEVICE_MAP
+    # explicitly, never swept into DESKTOP.
+    _validate_devices(df, source="campaign perf CSV")
+    df["device"] = df["Device type"].map(DEVICE_MAP)
 
     # Network (keep as-is; routing happens in loader)
     df["network"] = df["Network"].astype(str).str.strip()

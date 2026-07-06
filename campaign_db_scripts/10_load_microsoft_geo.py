@@ -149,9 +149,10 @@ EXPECTED_HEADERS = {
 # --- Microsoft -> DB device label mapping ---
 
 DEVICE_MAP = {
-    "Computer":   "DESKTOP",
-    "Smartphone": "MOBILE",
-    "Tablet":     "TABLET",
+    "Computer":      "DESKTOP",
+    "Smartphone":    "MOBILE",
+    "Tablet":        "TABLET",
+    "Connected TVs": "CONNECTED_TV",
 }
 
 # --- Microsoft -> DB location-type label mapping ---

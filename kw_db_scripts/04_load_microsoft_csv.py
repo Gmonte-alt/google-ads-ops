@@ -123,9 +123,10 @@ COLUMN_MAP = {
 
 # Microsoft device names -> our standard device values (matching Google)
 DEVICE_MAP = {
-    "Computer":   "DESKTOP",
-    "Smartphone": "MOBILE",
-    "Tablet":     "TABLET",
+    "Computer":      "DESKTOP",
+    "Smartphone":    "MOBILE",
+    "Tablet":        "TABLET",
+    "Connected TVs": "CONNECTED_TV",
 }
 
 # Match type normalization (Microsoft exports Title Case)
@@ -380,7 +381,16 @@ def clean_and_validate(df: pd.DataFrame) -> pd.DataFrame:
     df["criterion_id"] = df["keyword_id"].apply(make_ms_criterion_id)
 
     # 4. Normalize device and status
-    df["device"] = df["device_raw"].map(DEVICE_MAP).fillna("DESKTOP")
+    # Device: hard-fail on unknown rather than silently defaulting to DESKTOP.
+    # A new Microsoft device (e.g. 'Connected TVs') must be added to DEVICE_MAP
+    # explicitly so it lands as its own device, not folded into DESKTOP.
+    _unmapped_devices = set(df["device_raw"].dropna().unique()) - set(DEVICE_MAP.keys())
+    if _unmapped_devices:
+        raise SystemExit(
+            f"FATAL: keyword CSV contains unrecognized device(s): "
+            f"{_unmapped_devices}. Update DEVICE_MAP in 04_load_microsoft_csv.py."
+        )
+    df["device"] = df["device_raw"].map(DEVICE_MAP)
     df["status"] = df["status"].map(STATUS_MAP).fillna("ENABLED")
 
     # ── Numeric parsing helper ───────────────────────────────────────────
@@ -729,6 +739,27 @@ def upsert_instances_and_performance(
     )
     perf_all_df["device"] = "ALL"
 
+    # Network-split rollup (Path B): device='ALL' x network. This is the
+    # SAME total as perf_all_df, but decomposed by network instead of collapsed.
+    # Summing this across networks per (criterion, ad_group, date) reproduces
+    # perf_all_df exactly (the reconciliation invariant). Written to the
+    # separate keyword_performance_network_daily table so the existing
+    # network-collapsed keyword_performance_daily is untouched.
+    perf_net_df = (
+        df.groupby(["criterion_id", "ad_group_id", "report_date", "network"],
+                   as_index=False)
+        .agg(
+            impressions=("impressions", "sum"),
+            clicks=("clicks", "sum"),
+            cost_micros=("cost_micros", "sum"),
+            conversions=("conversions", "sum"),
+            offline_conv_count=("offline_conv_count", "sum"),
+            all_conversions=("all_conversions", "sum"),
+            all_revenue=("all_revenue", "sum"),
+        )
+    )
+    perf_net_df["device"] = "ALL"
+
     def _write_perf_rows(rows_df: "pd.DataFrame"):
         """Write a batch of aggregated performance rows to the database."""
         for _, row in rows_df.iterrows():
@@ -785,9 +816,67 @@ def upsert_instances_and_performance(
                           f"date={row['report_date']} device={row['device']}")
             counts["perf_written"] += 1
 
+    def _write_perf_net_rows(rows_df: "pd.DataFrame"):
+        """Write network-split rows to keyword_performance_network_daily.
+        Same instance resolution as _write_perf_rows, but carries `network`
+        and targets the network table. device is always 'ALL' at this grain."""
+        for _, row in rows_df.iterrows():
+            inst_row = cursor.execute(
+                """
+                SELECT id FROM keyword_instances
+                WHERE account_id  = ?
+                  AND ad_group_id  = ?
+                  AND criterion_id = ?
+                """,
+                (account_id, row["ad_group_id"], row["criterion_id"]),
+            ).fetchone()
+            if inst_row is None:
+                continue
+            instance_id = inst_row["id"]
+            if not dry_run:
+                try:
+                    cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO keyword_performance_network_daily
+                            (instance_id, report_date, device, network, geo_state,
+                             geo_target_constant_id,
+                             clicks, impressions, cost_micros,
+                             primary_conv_count, primary_conv_value,
+                             secondary_conv_count,
+                             all_conv_count, all_conv_value)
+                        VALUES
+                            (?, ?, ?, ?, 'ALL', NULL,
+                             ?, ?, ?,
+                             ?, ?,
+                             ?,
+                             ?, ?)
+                        """,
+                        (
+                            instance_id,
+                            row["report_date"],
+                            row["device"],                     # 'ALL'
+                            row["network"],
+                            int(row["clicks"]),
+                            int(row["impressions"]),
+                            float(row["cost_micros"]),
+                            float(row["conversions"]),          # primary count: pixel
+                            float(row["all_revenue"]),          # primary value: offline revenue
+                            float(row["offline_conv_count"]),   # secondary: offline-only count
+                            float(row["all_conversions"]),      # all_conv_count: raw MS total
+                            float(row["all_revenue"]),          # all_conv_value: offline revenue
+                        ),
+                    )
+                except Exception as e:
+                    print(f"  ERROR writing network perf row: {e}")
+                    print(f"  Row: criterion={row['criterion_id']} "
+                          f"date={row['report_date']} network={row['network']}")
+            counts["perf_net_written"] = counts.get("perf_net_written", 0) + 1
+
     # Write device-level rows first, then ALL rollup
     _write_perf_rows(perf_df)
     _write_perf_rows(perf_all_df)
+    # Path B: network-split table (device='ALL' x network)
+    _write_perf_net_rows(perf_net_df)
 
     if not dry_run:
         conn.commit()
@@ -881,6 +970,7 @@ def _run_load(csv_path: Path, dry_run: bool, account_number: str, account_label_
     print(f"  Instances inserted : {counts['instances_inserted']:,}")
     print(f"  Instances updated  : {counts['instances_updated']:,}")
     print(f"  Performance rows   : {counts['perf_written']:,}")
+    print(f"  Network perf rows  : {counts.get('perf_net_written', 0):,}")
 
     # -- Summary --
     print("\n--- Database summary after load ---")
@@ -1034,6 +1124,15 @@ def reset_microsoft_account(conn, dry_run: bool, account_number: str, account_la
         )
     """, (account_id,))
     print(f"  Deleted {cursor.rowcount:,} performance rows")
+
+    # Path B: same delete for the network-split table (kept in lockstep with kpd)
+    cursor.execute("""
+        DELETE FROM keyword_performance_network_daily
+        WHERE instance_id IN (
+            SELECT id FROM keyword_instances WHERE account_id = ?
+        )
+    """, (account_id,))
+    print(f"  Deleted {cursor.rowcount:,} network performance rows")
 
     # Capture orphaned identity_ids before deleting instances
     orphan_ids = [r[0] for r in cursor.execute("""

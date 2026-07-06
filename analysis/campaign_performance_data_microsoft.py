@@ -53,13 +53,22 @@ DATA SOURCES & RECONCILIATION:
   - All queries filter device='ALL' (the synthesized campaign-level
     rollup row). Without this filter, sums double-count due to per-device
     rows being present alongside the ALL rollup.
+  - DEVICE NOTE (2026): Microsoft now serves a fourth device,
+    CONNECTED_TV, alongside DESKTOP/MOBILE/TABLET. The 'ALL' rollup
+    includes it, so every rollup here is already correct. Any FUTURE
+    per-device breakdown added to this script MUST select with
+    `device != 'ALL'` rather than a hardcoded
+    `device IN ('DESKTOP','MOBILE','TABLET')` list — the latter would
+    silently drop CONNECTED_TV (and any future device).
   - Architect-confirmed reconciliation: camp_spend (search + network)
     matches keyword_spend within 0.001% across the account historically.
 
 CAMPAIGN INCLUSION:
-  - ENABLED campaigns: included unconditionally.
-  - PAUSED campaigns: included only if they have >=1 impression in the
-    last 14 days.
+  - Campaign inclusion (ENABLED and PAUSED alike): a campaign is included
+    if it had any spend OR any revenue within the 12-week report window.
+    Paused campaigns that contributed spend/revenue/GP in the window are
+    kept (their contribution is real); campaigns with no spend and no
+    revenue in the window are skipped. Status does not change the test.
 
 USAGE:
   python campaign_performance_data_microsoft.py
@@ -70,6 +79,7 @@ OUTPUT: campaign_performance_data_microsoft_<YYYY-MM-DD>.xlsx
 """
 
 import argparse
+import re
 import sqlite3
 import sys
 from datetime import date, timedelta
@@ -77,6 +87,7 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -272,11 +283,25 @@ def fetch_daily_metrics(conn, start_date: date, end_date: date) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════════
 
 def short_code(campaign_name: str) -> str:
-    """Extract the state abbreviation or short identifier from a campaign name.
+    """Extract a short identifier from a campaign name.
 
-    'HOME INSURANCE-CALIFORNIA-SEARCH-MOBILE-USA-STE' -> 'CA'
-    'HOME INSURANCE-NORTH CAROLINA-SEARCH-MOBILE-USA-STE' -> 'NC'
-    Falls back to first 8 chars sanitized if state name not recognized.
+    Handles BOTH naming conventions present in the account:
+      NEW (tier-group, post-June-2026 restructure):
+        'HOME INSURANCE_STATE-GROUP_Tier2RPL65Plus_..._USA-STE' -> 'T2'
+      OLD (state-based, still used by paused legacy campaigns):
+        'HOME INSURANCE-CALIFORNIA-SEARCH-MOBILE-USA-STE'       -> 'CA'
+
+    The tier branch runs FIRST and is load-bearing: Tier 5 is the
+    renamed 'Indiana shell', so a tier name can still contain an embedded
+    state token. Tier identity must win over state-name matching.
+
+    Codes key only off the tier NUMBER (T1/T2/T3/T5), not the RPL band.
+    This keeps tab/sheet codes readable. No two tiers share a number
+    today, so it is unambiguous; if a tier ever splits into two RPL
+    bands the dedup loop in build_workbook absorbs the clash (T5, T52) —
+    distinct, never overwriting.
+
+    Falls back to first 8 alphanumeric chars if neither convention matches.
     """
     STATE_ABBR = {
         "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
@@ -295,12 +320,73 @@ def short_code(campaign_name: str) -> str:
         "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
     }
     name_up = campaign_name.upper()
+    # NEW convention FIRST — tier identity wins over any embedded state name.
+    m = re.search(r"TIER\s*(\d+)", name_up)
+    if m:
+        return f"T{m.group(1)}"
+    # OLD convention — state-based names (paused legacy campaigns).
     for state, abbr in STATE_ABBR.items():
         if state in name_up:
             return abbr
     # Fallback: cleaned first 8 chars of the campaign name
     cleaned = "".join(c for c in name_up if c.isalnum())[:8]
     return cleaned or "CAMP"
+
+
+def fetch_rename_boundaries(conn, window_start: date | None = None,
+                            window_end: date | None = None) -> dict:
+    """Return {campaign_id: [rename_date, ...]} for campaigns that actually
+    changed name, optionally filtered to the [window_start, window_end] range.
+
+    A "rename" is the valid_from of any name-history interval AFTER the
+    earliest one (the earliest interval is the campaign's first/birth name,
+    not a rename). Only the four restructured tier shells should appear.
+
+    Used to mark the scope-change boundary on the daily sheets: for a
+    renamed tier campaign, pre-boundary rows reflect the prior single-state
+    scope, post-boundary rows reflect the consolidated tier-group scope, so
+    a 12-week series splices two different populations at this date.
+
+    SCHEMA ASSUMPTION (verify against live DB): table `campaign_name_history`
+    with columns (campaign_id, campaign_name, valid_from, valid_to). If the
+    table is absent or its shape differs, this returns {} and the workbook
+    is built without boundary markers rather than crashing.
+    """
+    try:
+        rows = conn.execute(
+            """
+            SELECT h.campaign_id, h.valid_from
+            FROM campaign_name_history h
+            JOIN campaigns c ON c.campaign_id = h.campaign_id
+            WHERE c.account_id = ?
+            ORDER BY h.campaign_id, h.valid_from
+            """,
+            (ACCOUNT_ID,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+
+    by_camp: dict = {}
+    for cid, vf in rows:
+        if vf:
+            by_camp.setdefault(cid, []).append(vf)
+
+    boundaries: dict = {}
+    for cid, vfs in by_camp.items():
+        rename_dates = []
+        for vf in sorted(vfs)[1:]:  # skip the birth interval
+            try:
+                d = date.fromisoformat(vf)
+            except (ValueError, TypeError):
+                continue
+            if window_start and d < window_start:
+                continue
+            if window_end and d > window_end:
+                continue
+            rename_dates.append(d)
+        if rename_dates:
+            boundaries[cid] = rename_dates
+    return boundaries
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -310,7 +396,8 @@ def short_code(campaign_name: str) -> str:
 def write_daily_sheet(ws, daily_df: pd.DataFrame,
                       start_date: date, end_date: date,
                       max_data_date: date, last_complete_sun: date,
-                      label: str, is_account: bool):
+                      label: str, is_account: bool,
+                      rename_dates: list | None = None):
     """Write a Daily_<code> sheet with per-network breakouts across 13 metrics.
 
     daily_df expected columns:
@@ -351,6 +438,12 @@ def write_daily_sheet(ws, daily_df: pd.DataFrame,
     current_fill = PatternFill("solid", fgColor=CURRENT_WEEK_FILL)
     search_fill = PatternFill("solid", fgColor=SEARCH_TINT)
     audience_fill = PatternFill("solid", fgColor=AUDIENCE_TINT)
+    # Rename/scope-change boundary: a thick top border on the boundary row,
+    # marking where this campaign's population definition changed (single
+    # state before, consolidated tier group after). Survives regardless of
+    # fill, so it reads even on amber current-week rows.
+    rename_set = {d for d in (rename_dates or [])}
+    boundary_side = Side(border_style="thick", color="7030A0")  # purple
 
     ws.cell(row=1, column=1, value=f"Daily metrics: {label}").font = title_font
     ws.cell(row=2, column=1,
@@ -507,11 +600,17 @@ def write_daily_sheet(ws, daily_df: pd.DataFrame,
         ws.cell(row=r, column=42, value=f"=IF(I{r}=0,0,K{r}/I{r})").number_format = pct_fmt
 
         # Apply styling
+        is_boundary = cur_date in rename_set
         for col_idx in range(1, 43):
             cell = ws.cell(row=r, column=col_idx)
             cell.font = body_font
-            cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
-                                 left=THIN_BORDER, right=THIN_BORDER)
+            if is_boundary:
+                # Thick purple top border across the row marks the scope change
+                cell.border = Border(top=boundary_side, bottom=THIN_BORDER,
+                                     left=THIN_BORDER, right=THIN_BORDER)
+            else:
+                cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                     left=THIN_BORDER, right=THIN_BORDER)
             if is_current_week:
                 cell.fill = current_fill
             elif col_idx in metric_search_cols:
@@ -520,6 +619,17 @@ def write_daily_sheet(ws, daily_df: pd.DataFrame,
                 cell.fill = audience_fill
             elif col_idx == audience_share_col:
                 cell.fill = audience_fill
+        if is_boundary:
+            # Comment on the date cell explains the discontinuity
+            date_cell = ws.cell(row=r, column=1)
+            date_cell.comment = Comment(
+                "Name / scope change on this date. Rows on or after this "
+                "line reflect the consolidated tier-group scope; earlier "
+                "rows reflect this campaign_id's prior (single-state) "
+                "scope. A step in volume here is a population change, not "
+                "necessarily a performance change.",
+                "rename-boundary",
+            )
 
         row_idx += 1
         cur_date += timedelta(days=1)
@@ -544,7 +654,8 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
                           start_date: date, end_date: date,
                           max_data_date: date, last_complete_sun: date,
                           daily_first_row: int, daily_last_row: int,
-                          label: str, metric_group: str | None = None):
+                          label: str, metric_group: str | None = None,
+                          rename_dates: list | None = None):
     """Write a DOW_<code>_<group> sheet using SUMIFS formulas.
 
     metric_group selects which grids to include:
@@ -610,6 +721,16 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
         f"prior complete week (partial weeks skipped)."
     )
     ws.cell(row=2, column=1, value=note).font = note_font
+    if rename_dates:
+        ds = ", ".join(d.isoformat() for d in sorted(rename_dates))
+        warn = Font(italic=True, bold=True, color="7030A0", size=9, name="Arial")
+        ws.cell(row=2, column=1).comment = Comment(
+            f"Scope change on {ds}: weeks before this date reflect this "
+            f"campaign_id's prior single-state scope; weeks on/after reflect "
+            f"the consolidated tier-group scope. A step across that week is a "
+            f"population change, not necessarily a performance change.",
+            "rename-boundary",
+        )
 
     # Build list of weeks
     week_mondays = []
@@ -1274,6 +1395,15 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
     if daily_all.empty:
         raise RuntimeError("No daily metrics in the window — nothing to write")
 
+    # Rename/scope-change boundaries (only the restructured tier shells),
+    # filtered to the display window. Keyed by campaign_id. Empty dict if
+    # campaign_name_history is unavailable — workbook still builds.
+    rename_by_cid = fetch_rename_boundaries(conn, window_start, max_data_date)
+    if rename_by_cid:
+        print(f"  Rename boundaries in window: "
+              f"{sum(len(v) for v in rename_by_cid.values())} across "
+              f"{len(rename_by_cid)} campaign(s)")
+
     # Account-level: sum across ALL enabled+paused candidates per date (no
     # activity filter — account view is the full picture).
     account_daily = (
@@ -1290,19 +1420,9 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
                       rev_audience=("rev_audience", "sum"))
     )
 
-    # For the per-campaign filter, compute impressions over the last 14 days
-    # of the window (anchored at max_data_date inclusive).
-    recent_cutoff = max_data_date - timedelta(days=13)
-    daily_all["_date"] = pd.to_datetime(daily_all["date"]).dt.date
-    recent_imp = (
-        daily_all[daily_all["_date"] >= recent_cutoff]
-        .groupby("campaign_id")
-        .agg(recent_imp_search=("imp_search", "sum"),
-             recent_imp_audience=("imp_audience", "sum"))
-    )
-    recent_imp["recent_total_imp"] = (
-        recent_imp["recent_imp_search"] + recent_imp["recent_imp_audience"]
-    )
+    # Campaign inclusion is by financial contribution in the window
+    # (spend > 0 OR revenue > 0), computed per campaign below — no
+    # recency gate, applied identically to ENABLED and PAUSED.
 
     code_to_meta = {
         "Account": {"campaign_name": "ALL enabled+paused campaigns (sum)",
@@ -1332,8 +1452,7 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
     # ── Per-campaign sheets
     written_codes = {"Account"}
     n_included = 0
-    n_skipped_paused_idle = 0
-    n_skipped_zero_data = 0
+    n_skipped_no_contrib = 0
 
     for _, cm in camp_meta.iterrows():
         cid = cm["campaign_id"]
@@ -1344,20 +1463,15 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
             columns=["campaign_id", "_date"], errors="ignore"
         )
 
-        # Hard zero-data filter: no impressions or clicks across the entire window
-        if (camp_daily["imp_search"].sum() == 0
-                and camp_daily["imp_audience"].sum() == 0
-                and camp_daily["clicks_search"].sum() == 0
-                and camp_daily["clicks_audience"].sum() == 0):
-            n_skipped_zero_data += 1
+        # Inclusion gate (ENABLED and PAUSED alike): include the campaign
+        # if it had any spend OR any revenue in the window. Status-agnostic.
+        win_spend = (camp_daily["cost_search"].sum()
+                     + camp_daily["cost_audience"].sum())
+        win_rev = (camp_daily["rev_search"].sum()
+                   + camp_daily["rev_audience"].sum())
+        if win_spend < 1e-6 and win_rev < 1e-6:
+            n_skipped_no_contrib += 1
             continue
-
-        # PAUSED activity filter: require ≥1 impression in last 14 days
-        if status == "PAUSED":
-            recent_total = recent_imp.loc[cid, "recent_total_imp"] if cid in recent_imp.index else 0
-            if recent_total < 1:
-                n_skipped_paused_idle += 1
-                continue
 
         code = short_code(cname)
         base_code = code
@@ -1369,11 +1483,14 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
         code_to_meta[code] = {"campaign_name": cname, "status": status,
                               "current_tcpa": cm["current_tcpa"]}
 
+        camp_rename_dates = rename_by_cid.get(cid, [])
+
         ws_d = wb.create_sheet(f"Daily_{code}")
         last_row = write_daily_sheet(
             ws_d, camp_daily, window_start, max_data_date,
             max_data_date, last_complete_sun,
             label=cname, is_account=False,
+            rename_dates=camp_rename_dates,
         )
 
         # One consolidated DOW sheet per campaign — all 40 grids, same
@@ -1384,6 +1501,7 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
             ws_g, f"Daily_{code}", window_start, max_data_date,
             max_data_date, last_complete_sun,
             5, last_row, label=cname, metric_group=None,
+            rename_dates=camp_rename_dates,
         )
 
         n_included += 1
@@ -1397,12 +1515,9 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
     print("  ✓ Index")
     print()
     print(f"  Per-campaign sheets included: {n_included}")
-    if n_skipped_paused_idle:
-        print(f"  Paused campaigns skipped (no impressions in last 14d): "
-              f"{n_skipped_paused_idle}")
-    if n_skipped_zero_data:
-        print(f"  Campaigns skipped (zero data in entire window): "
-              f"{n_skipped_zero_data}")
+    if n_skipped_no_contrib:
+        print(f"  Campaigns skipped (no spend or revenue in window): "
+              f"{n_skipped_no_contrib}")
 
     return wb
 

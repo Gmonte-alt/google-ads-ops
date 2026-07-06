@@ -1285,6 +1285,81 @@ REGIONAL_BRAND_DATA = [
      "AAA affiliate insurer in CA, NV, UT. Full name: CSAA Insurance Group. "
      "Queries: 'csaa insurance', 'csaaa', 'csaa home insurance'.",
      "carrier_regional"),
+
+    # -----------------------------------------------------------------------
+    # NONBRAND-CORE ENRICHMENT (parity analysis diagnostic 2026-06-30)
+    # High-converting carrier queries that were leaking into NONBRAND CORE.
+    # -----------------------------------------------------------------------
+
+    ("PURE Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "High-net-worth specialty homeowners carrier (Privilege Underwriters). "
+     "Queries: 'pure insurance', 'pure home insurance', 'pure insurance company'.",
+     "carrier_specialist"),
+
+    ("Shelter Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Regional carrier (Midwest/South). "
+     "Queries: 'shelter insurance', 'shelter home insurance'.",
+     "carrier_regional"),
+
+    ("Frankenmuth Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Michigan-based regional carrier. "
+     "Queries: 'frankenmuth insurance', 'frankenmuth mutual'.",
+     "carrier_regional"),
+
+    ("Westfield Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Ohio-based regional carrier. "
+     "Queries: 'westfield insurance', 'westfield home insurance'.",
+     "carrier_regional"),
+
+    ("Safety Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "New England regional carrier (MA/NH/ME). "
+     "Queries: 'safety insurance', 'safety home insurance'.",
+     "carrier_regional"),
+
+    ("CURE Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Citizens United Reciprocal Exchange (NJ/PA/MI). Verify home footprint. "
+     "Queries: 'cure insurance', 'cure auto insurance'.",
+     "carrier_specialist"),
+
+    ("Universal North America", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Universal Insurance Holdings -- distinct from existing 'Universal Insurance'. "
+     "Queries: 'universal north america'. NOTE: bare 'universal insurance' collides "
+     "with existing brand; use full name only.",
+     "carrier_regional"),
+
+    ("Castle Key Insurance", "Allstate",
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Allstate subsidiary (Florida). "
+     "Queries: 'castle key', 'castle key insurance'.",
+     "carrier_subsidiary"),
+
+    ("Frontline Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Southeast coastal regional carrier (FL/SC/NC/GA/AL). "
+     "Queries: 'frontline insurance', 'frontline home insurance'.",
+     "carrier_regional"),
+
+    ("Compass Insurance", None,
+     "approved", None, "nonbrand_core_enrichment", None, "home",
+     "Small carrier -- distinct from Encompass. Use specific variants to avoid "
+     "collision. Queries: 'compass insurance', 'compass home insurance'.",
+     "carrier_regional"),
+
+    ("Standard Insurance", None,
+     "conditional",
+     "match_risk: bare token 'standard' shared with existing 'Standard Casualty' "
+     "-- context-bearing variants only, never bare 'standard'.",
+     "nonbrand_core_enrichment", None, "home",
+     "Distinct carrier from existing 'Standard Casualty'. "
+     "Queries: 'standard insurance'.",
+     "carrier_regional"),
 ]
 
 def normalize(text: str) -> str:
@@ -1625,6 +1700,23 @@ def seed_supplemental_variants(conn, brand_ids: dict):
         ('aaa',               'aaa homeowners',       None),
         ('aaa',               'aaa home insurance',   None),
         ('aaa',               'triple a insurance',   None),
+        ('aaa',               'triple aaa',           None),
+        # --- Nonbrand-CORE enrichment: bare forms + high-vol misspellings (2026-06-30) ---
+        ('alfa insurance',    'alfa',                 None),
+        ('citizens property insurance corporation', 'citizens', None),
+        ('citizens property insurance corporation', 'citizens insurance', None),
+        ('kin insurance',     'kin',                  None),
+        ('west bend mutual',  'west bend',            None),
+        ('west bend mutual',  'west bend insurance',  None),
+        ('liberty mutual',    'liberty insurance',    None),
+        ('liberty mutual',    'liberty home insurance', None),
+        ('safeco',            'safeu home insurance', None),
+        ('safeco',            'safeu insurance',      None),
+        ('travelers',         'travellers',           None),
+        ('travelers',         'travellers insurance', None),
+        ('travelers',         'travellers home insurance', None),
+        ('usaa',              'ussa',                 None),
+        ('farmers',           'farmer insurance',     None),
         # Costco misspelling
         ('costco',            'costo',                None),
         ('costco',            'costo home insurance', None),

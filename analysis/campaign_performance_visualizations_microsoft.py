@@ -49,10 +49,18 @@ script monkey-patches it at startup with a corrected fetcher to
 guarantee the elasticity charts here read de-duplicated conversions.
 The elasticity script's own outputs (regression coefficients, per-event
 sheets) are NOT corrected by this patch — fix that script separately.
+
+DEVICE NOTE (2026): Microsoft now serves a fourth device, CONNECTED_TV,
+alongside DESKTOP/MOBILE/TABLET. Every query here filters device='ALL'
+(the rollup that already includes CONNECTED_TV), so totals are correct.
+Any FUTURE per-device breakdown must use `device != 'ALL'`, never a
+hardcoded `device IN ('DESKTOP','MOBILE','TABLET')` list, which would
+silently drop CONNECTED_TV.
 """
 
 import argparse
 import io
+import re
 import sqlite3
 from datetime import date, timedelta
 from pathlib import Path
@@ -90,20 +98,130 @@ def banner(text: str) -> None:
 # DB QUERIES
 # ═══════════════════════════════════════════════════════════════════
 
-def fetch_enabled_campaigns(conn) -> pd.DataFrame:
-    """Enabled campaigns + their current tCPA. Filters to ENABLED status."""
+def fetch_campaigns(conn) -> pd.DataFrame:
+    """ENABLED + PAUSED campaigns with current tCPA and status.
+
+    Paused campaigns are returned here and gated for activity at fetch time
+    (see main): paused campaigns that contributed spend/revenue/GP in the
+    window are KEPT, matching the data-tables workbook. Sorted ENABLED-first
+    then by name for stable ordering.
+    """
     sql = """
     SELECT
         campaign_id,
         campaign_name,
+        status,
         target_cpa_micros / 1.0e6 AS current_tcpa
     FROM campaigns
     WHERE account_id = ?
-      AND status = 'ENABLED'
-    ORDER BY campaign_name
+      AND status IN ('ENABLED', 'PAUSED')
+    ORDER BY status, campaign_name
     """
     df = pd.read_sql(sql, conn, params=(ACCOUNT_ID,))
     return df
+
+
+# Backward-compatible alias (older callers referenced this name).
+fetch_enabled_campaigns = fetch_campaigns
+
+
+def short_code(campaign_name: str) -> str:
+    """Short, collision-free identifier for a campaign — used for the
+    Excel tab name and chart short-titles.
+
+    Handles BOTH conventions in the account:
+      NEW tier-group: '..._Tier2RPL65Plus_..._USA-STE' -> 'T2'
+      OLD state-based: 'HOME INSURANCE-CALIFORNIA-...-USA-STE' -> 'CA'
+
+    Tier branch runs FIRST (load-bearing — Tier 5 is the renamed Indiana
+    shell, so a tier name can contain an embedded state token). Codes key
+    off the tier NUMBER only; no two tiers share a number today, and the
+    caller's dedup loop absorbs any future clash. This replaces the old
+    truncate-at-25-chars tab naming, under which all four tier campaigns
+    collapsed to the identical prefix 'HOME INSURANCE_STATE-GROU' and the
+    3rd/4th tier sheets silently failed to render.
+    """
+    STATE_ABBR = {
+        "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+        "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+        "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+        "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+        "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+        "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN",
+        "MISSISSIPPI": "MS", "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE",
+        "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
+        "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC",
+        "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK", "OREGON": "OR",
+        "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+        "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+        "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+        "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
+    }
+    name_up = campaign_name.upper()
+    m = re.search(r"TIER\s*(\d+)", name_up)
+    if m:
+        return f"T{m.group(1)}"
+    for state, abbr in STATE_ABBR.items():
+        if state in name_up:
+            return abbr
+    cleaned = "".join(c for c in name_up if c.isalnum())[:8]
+    return cleaned or "CAMP"
+
+
+def fetch_rename_boundaries(conn, window_start: date | None = None,
+                            window_end: date | None = None) -> dict:
+    """Return {campaign_name: [rename_date, ...]} for campaigns that changed
+    name, filtered to the [window_start, window_end] range.
+
+    Keyed by CURRENT campaign_name (matching how this script keys its
+    per-campaign dicts). A "rename" is the valid_from of any history
+    interval after the earliest (the earliest is the campaign's birth name).
+    Only the restructured tier shells should appear. Used to draw a
+    scope-change marker on the trend charts: pre-boundary weeks reflect the
+    prior single-state scope, post-boundary weeks the consolidated tier group.
+
+    SCHEMA ASSUMPTION (verify against live DB): `campaign_name_history` with
+    (campaign_id, campaign_name, valid_from, valid_to), joinable to
+    `campaigns` on campaign_id. Returns {} if the table is absent/malformed
+    so charts still render without markers.
+    """
+    try:
+        id_rows = conn.execute(
+            """
+            SELECT h.campaign_id, c.campaign_name, h.valid_from
+            FROM campaign_name_history h
+            JOIN campaigns c ON c.campaign_id = h.campaign_id
+            WHERE c.account_id = ? AND c.status = 'ENABLED'
+            ORDER BY h.campaign_id, h.valid_from
+            """,
+            (ACCOUNT_ID,),
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+
+    by_id: dict = {}
+    name_of: dict = {}
+    for cid, cname, vf in id_rows:
+        name_of[cid] = cname
+        if vf:
+            by_id.setdefault(cid, []).append(vf)
+
+    boundaries: dict = {}
+    for cid, vfs in by_id.items():
+        rename_dates = []
+        for vf in sorted(vfs)[1:]:  # skip birth interval
+            try:
+                d = date.fromisoformat(vf)
+            except (ValueError, TypeError):
+                continue
+            if window_start and d < window_start:
+                continue
+            if window_end and d > window_end:
+                continue
+            rename_dates.append(d)
+        if rename_dates:
+            boundaries[name_of[cid]] = rename_dates
+    return boundaries
 
 
 def fetch_latest_complete_week(conn) -> tuple[date, date]:
@@ -299,26 +417,71 @@ def aggregate_weekly(daily_df: pd.DataFrame) -> pd.DataFrame:
 # CHANGE-HISTORY LOADER (lightweight subset of elasticity script)
 # ═══════════════════════════════════════════════════════════════════
 
-def load_change_events(csv_path: Path,
-                       start_date: date, end_date: date) -> pd.DataFrame:
-    """Load tCPA + budget change events from the YTD change CSV, filtered
-    to the visualization window. Used to overlay vertical change-event
-    lines on the per-campaign charts.
+def fetch_change_events(conn, start_date: date, end_date: date,
+                        kinds: tuple | None = None) -> pd.DataFrame:
+    """Pull tCPA + budget change events from `campaign_change_events`,
+    keyed by campaign_id, for the given date window.
+
+    Replaces the stale name-based CSV. Joining on campaign_id — immutable
+    across renames — fixes the marker-dropping bug: a change logged under a
+    campaign's pre-rename (state) name still resolves to the now-tier
+    campaign, because the id never changed.
+
+    `kinds` selects change categories: subset of {'tcpa','budget'} or None
+    for all. Matching is tolerant: tCPA = change_type LIKE %CPA%, budget =
+    LIKE %BUDGET% (case-insensitive), so it works whether the table stores
+    'TargetCPA'/'DAILY_BUDGET' or variants like 'TARGET_CPA'/'tcpa'. Platform
+    match is case-insensitive too.
+
+    SCHEMA ASSUMPTION (verify against live DB): table `campaign_change_events`
+    with columns (campaign_id, platform, account_id, change_date, change_type,
+    old_value, new_value, raw_event_count); old_value/new_value in dollars;
+    raw_event_count > 1 marks a collapsed same-day budget chain. If the query
+    fails (missing table/column), it prints ONE clear warning and returns an
+    empty frame so charts still render — it does NOT fail silently.
     """
-    if not csv_path.exists():
-        return pd.DataFrame(columns=["change_date", "campaign_name",
-                                      "attribute", "old_value", "new_value"])
-    df = pd.read_csv(csv_path)
-    df["change_date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y").dt.date
-    df = df.rename(columns={
-        "Campaign": "campaign_name",
-        "Attribute changed": "attribute",
-        "Old value": "old_value",
-        "New value": "new_value",
-    })
-    df = df[(df["change_date"] >= start_date) & (df["change_date"] <= end_date)].copy()
-    return df[["change_date", "campaign_name", "attribute",
-               "old_value", "new_value"]].reset_index(drop=True)
+    cols = ["campaign_id", "change_date", "change_type",
+            "old_value", "new_value", "raw_event_count"]
+    like_for = {"tcpa": "%CPA%", "budget": "%BUDGET%"}
+    sql = """
+        SELECT campaign_id, change_date, change_type,
+               old_value, new_value, raw_event_count
+        FROM campaign_change_events
+        WHERE LOWER(platform) = 'microsoft'
+          AND account_id = ?
+          AND change_date BETWEEN ? AND ?
+    """
+    params: list = [ACCOUNT_ID, start_date.isoformat(), end_date.isoformat()]
+    if kinds:
+        ors = " OR ".join("UPPER(change_type) LIKE ?" for _ in kinds)
+        sql += f"   AND ({ors})\n"
+        params += [like_for[k] for k in kinds]
+    sql += "        ORDER BY campaign_id, change_date"
+    try:
+        df = pd.read_sql(sql, conn, params=params)
+    except Exception as exc:
+        print(f"  ⚠ campaign_change_events query failed — charts will have NO "
+              f"change markers. Reason: {exc}")
+        return pd.DataFrame(columns=cols)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    # Normalize campaign_id to a consistent integer dtype. Critical: the table
+    # may store it as TEXT; without this, the within-window filter
+    # (change_events_df["campaign_id"] == cid) compares str vs int and silently
+    # matches nothing — which is exactly the bug where the weekly chart lost its
+    # markers while the (int-keyed) elasticity chart kept them.
+    df["campaign_id"] = pd.to_numeric(df["campaign_id"], errors="coerce").astype("Int64")
+    df = df[df["campaign_id"].notna()]
+    df["change_date"] = pd.to_datetime(df["change_date"], errors="coerce").dt.date
+    df = df[df["change_date"].notna()]
+    for c in ("old_value", "new_value"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    if "raw_event_count" not in df.columns:
+        df["raw_event_count"] = 1
+    df["raw_event_count"] = (
+        pd.to_numeric(df["raw_event_count"], errors="coerce").fillna(1).astype(int)
+    )
+    return df[cols].reset_index(drop=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -332,6 +495,7 @@ def build_4panel_campaign_chart_png(
     change_events: list[dict],
     window_start: date,
     window_end: date,
+    rename_dates: list | None = None,
 ) -> bytes:
     """5-panel weekly chart for one campaign:
        Panel 1 (top):    weekly conversions (bar chart)
@@ -440,18 +604,63 @@ def build_4panel_campaign_chart_png(
     ax4.set_xlabel("Week starting (Mon)", fontsize=10)
     ax4.grid(True, alpha=0.3, axis="y")
 
-    # Overlay change-event markers on all panels
+    # Overlay change-event markers on all panels, labeled with the transition.
+    # Events are id-resolved (see fetch_change_events), so pre-rename changes
+    # land correctly on a renamed campaign's chart. Color: tCPA red dashed,
+    # budget orange dotted. NOTE: for budget changes, read the impact from the
+    # day AFTER the marker — the change day is a partial-day budget blend.
+    def _fmt_money(v):
+        try:
+            return f"${float(v):,.0f}"
+        except (TypeError, ValueError):
+            return str(v)
+
     for ev in change_events:
         change_dt = pd.Timestamp(ev["change_date"])
-        # Choose color by attribute type
-        if "TargetCPA" in str(ev.get("attribute", "")):
+        ctype = str(ev.get("change_type", ev.get("attribute", "")))
+        is_tcpa = "CPA" in ctype.upper()
+        is_budget = "BUDGET" in ctype.upper()
+        if is_tcpa:
             color, ls = "red", "--"
-        elif "Budget" in str(ev.get("attribute", "")):
-            color, ls = "#FF8C00", ":"  # orange dotted for budget changes
+        elif is_budget:
+            color, ls = "#FF8C00", ":"
         else:
             color, ls = "gray", "--"
         for ax in (ax1, ax_roas, ax2, ax3, ax4):
             ax.axvline(change_dt, color=color, linestyle=ls, linewidth=1.2, alpha=0.6)
+        # Transition label on the top panel
+        old_v, new_v = ev.get("old_value"), ev.get("new_value")
+        if is_tcpa:
+            lbl = f"tCPA {_fmt_money(old_v)}→{_fmt_money(new_v)}"
+        elif is_budget:
+            lbl = f"Budget {_fmt_money(old_v)}→{_fmt_money(new_v)}"
+            rc = ev.get("raw_event_count", 1) or 1
+            if int(rc) > 1:
+                lbl += f" (×{int(rc)})"
+        else:
+            lbl = ctype
+        ax1.annotate(lbl, xy=(change_dt, 0.98),
+                     xycoords=("data", "axes fraction"),
+                     xytext=(2, 0), textcoords="offset points",
+                     fontsize=6.5, color=color, rotation=90,
+                     ha="left", va="top", alpha=0.9)
+
+    # Overlay rename / scope-change boundary — visually distinct from the
+    # tCPA/budget event lines (thick solid purple). Marks where this
+    # campaign_id's population definition changed from a single state to the
+    # consolidated tier group, so the step in the series reads as a scope
+    # change rather than a performance change.
+    for rd in (rename_dates or []):
+        rename_dt = pd.Timestamp(rd)
+        for ax in (ax1, ax_roas, ax2, ax3, ax4):
+            ax.axvline(rename_dt, color="#7030A0", linestyle="-",
+                       linewidth=2.2, alpha=0.85, zorder=5)
+        # Label on the top panel only, to avoid clutter
+        ax1.annotate("scope change\n(renamed)", xy=(rename_dt, 1.0),
+                     xycoords=("data", "axes fraction"),
+                     xytext=(4, -10), textcoords="offset points",
+                     fontsize=7.5, color="#7030A0", fontweight="bold",
+                     ha="left", va="top")
 
     # Format x-axis
     ax4.xaxis.set_major_locator(mdates.WeekdayLocator(byweekday=0))  # Mondays
@@ -519,7 +728,7 @@ def build_overview_small_multiples_png(
         ax.axhline(0, color="black", linewidth=0.5, alpha=0.5)
 
         # Title: short campaign name + total profit
-        short_name = campaign_name.replace("HOME INSURANCE-", "").split("-SEARCH")[0]
+        short_name = short_code(campaign_name)
         total_profit = profits.sum()
         ax.set_title(f"{short_name}\n${total_profit:,.0f} total",
                      fontsize=9, fontweight="bold", loc="left")
@@ -1017,15 +1226,6 @@ def _import_elasticity_module():
     return mod
 
 
-def _load_tcpa_changes_for_elasticity(elasticity_mod, csv_path: Path) -> pd.DataFrame:
-    """Use the elasticity module's tCPA-changes loader, or return empty
-    if the module isn't available."""
-    if elasticity_mod is None or not csv_path.exists():
-        return pd.DataFrame(columns=["change_date", "campaign_name",
-                                      "old_tcpa", "new_tcpa"])
-    return elasticity_mod.load_tcpa_changes(csv_path)
-
-
 # ═══════════════════════════════════════════════════════════════════
 # TOTAL-ACCOUNT AGGREGATION
 # ═══════════════════════════════════════════════════════════════════
@@ -1160,7 +1360,10 @@ def build_total_account_profit_chart_png(
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--db-path", default=str(DEFAULT_DB_PATH))
-    p.add_argument("--change-history", default=str(DEFAULT_CHANGE_CSV))
+    p.add_argument("--change-history", default=str(DEFAULT_CHANGE_CSV),
+                   help="DEPRECATED / unused. Change events now come from the "
+                        "campaign_change_events DB table; this flag is kept "
+                        "only so existing invocations don't error.")
     p.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     p.add_argument("--end-date", default=None,
                    help="Last day of analysis window (YYYY-MM-DD). If "
@@ -1176,7 +1379,7 @@ def parse_args():
 def main():
     args = parse_args()
     db_path = Path(args.db_path)
-    change_csv = Path(args.change_history)
+    _change_csv_unused = Path(args.change_history)  # retained for back-compat; not read
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     n_weeks = args.weeks
@@ -1213,23 +1416,31 @@ def main():
 
     banner("CAMPAIGN PERFORMANCE VISUALIZATIONS — Microsoft Home")
     print(f"  DB:                  {db_path}")
-    print(f"  Change history:      {change_csv}")
+    print(f"  Change history:      campaign_change_events table (id-keyed)")
     print(f"  Output:              {output_dir}")
     print(f"  Window:              {window_start} (Mon) to {window_end} (Sun)")
     print(f"  Weeks:               {n_weeks}")
     print(f"  End date source:     {end_source}")
     print()
 
-    enabled = fetch_enabled_campaigns(conn)
-    print(f"Found {len(enabled)} enabled campaigns")
+    campaigns_df = fetch_campaigns(conn)
+    n_enabled = int((campaigns_df["status"] == "ENABLED").sum())
+    n_paused = int((campaigns_df["status"] == "PAUSED").sum())
+    print(f"Found {n_enabled} ENABLED + {n_paused} PAUSED candidate campaigns")
     print()
 
-    # Load change events filtered to the window (used to overlay vertical
-    # change-event lines on the weekly per-campaign charts)
-    change_events_df = load_change_events(change_csv, window_start, window_end)
+    # Load change events within the window from campaign_change_events,
+    # keyed by campaign_id (used to overlay labeled vertical lines on the
+    # per-campaign charts). id-keyed so pre-rename changes resolve correctly.
+    change_events_df = fetch_change_events(conn, window_start, window_end)
+    if change_events_df.empty:
+        n_tcpa = n_budget = 0
+    else:
+        ct = change_events_df["change_type"].astype(str).str.upper()
+        n_tcpa = int(ct.str.contains("CPA").sum())
+        n_budget = int(ct.str.contains("BUDGET").sum())
     print(f"Loaded {len(change_events_df)} change events within window "
-          f"({(change_events_df['attribute'] == 'TargetCPA').sum()} tCPA, "
-          f"{change_events_df['attribute'].str.contains('Budget', na=False).sum()} budget)")
+          f"({n_tcpa} tCPA, {n_budget} budget) from campaign_change_events")
     print()
 
     # ── Import the elasticity module (for side-by-side daily charts) ──
@@ -1242,29 +1453,59 @@ def main():
     else:
         print("  ✓ Loaded + monkey-patched fetch_campaign_daily with "
               "device='ALL' fix")
-    # Load full tCPA change history (not just within-window) — the
-    # elasticity chart uses the full set to draw the tCPA step function
-    # and shade past measurement windows.
-    tcpa_changes_all = _load_tcpa_changes_for_elasticity(elasticity_mod, change_csv)
-    print(f"  Loaded {len(tcpa_changes_all)} tCPA change events for "
-          f"elasticity-chart history")
+    # Full-history tCPA changes for the elasticity step function, id-keyed,
+    # over the wider elasticity window (back to attribution go-live). Pulled
+    # from campaign_change_events so renamed campaigns keep their full history.
+    elasticity_events_start = min(date(2026, 1, 13), window_start)
+    tcpa_changes_all = fetch_change_events(
+        conn, elasticity_events_start, window_end, kinds=("tcpa",)
+    )
+    print(f"  Loaded {len(tcpa_changes_all)} tCPA change events (id-keyed) "
+          f"for elasticity-chart history")
+    if change_events_df.empty and tcpa_changes_all.empty:
+        print("  ⚠ NO change events returned from campaign_change_events for "
+              "account_id=2. Charts will be marker-free. Verify the table is "
+              "populated and the column/value assumptions match (see notes).")
     print()
 
-    # Process each campaign: fetch daily (combined + per-network), aggregate weekly
+    # Process each campaign: fetch daily (combined + per-network), aggregate weekly.
+    # Inclusion gate mirrors the data-tables workbook so both list the same set:
+    # include any campaign (ENABLED or PAUSED) that had spend OR revenue in the
+    # 12-week window. No recency/status condition — financial contribution only.
     campaign_daily: dict[str, pd.DataFrame] = {}
     campaign_search_daily: dict[str, pd.DataFrame] = {}
     campaign_audience_daily: dict[str, pd.DataFrame] = {}
     campaign_weekly: dict[str, pd.DataFrame] = {}
-    for _, camp in enabled.iterrows():
+    campaign_status: dict[str, str] = {}
+    n_incl = n_skip_no_contrib = 0
+
+    for _, camp in campaigns_df.iterrows():
         cname = camp["campaign_name"]
+        status = camp["status"]
         combined, search_only, audience_only = fetch_campaign_daily_split(
             conn, cname, window_start, window_end
         )
+
+        # Inclusion gate: any spend OR any revenue in the window.
+        # combined carries spend_usd and conv_value (= all_conversion_value).
+        win_spend = (float(combined["spend_usd"].sum())
+                     if (not combined.empty and "spend_usd" in combined.columns) else 0.0)
+        win_rev = (float(combined["conv_value"].sum())
+                   if (not combined.empty and "conv_value" in combined.columns) else 0.0)
+        if win_spend < 1e-6 and win_rev < 1e-6:
+            n_skip_no_contrib += 1
+            continue
+
         weekly = aggregate_weekly(combined)
         campaign_daily[cname] = combined
         campaign_search_daily[cname] = search_only
         campaign_audience_daily[cname] = audience_only
         campaign_weekly[cname] = weekly
+        campaign_status[cname] = status
+        n_incl += 1
+
+    print(f"Campaigns included: {n_incl} "
+          f"(skipped, no spend or revenue in window: {n_skip_no_contrib})")
 
     # ── Total-account rollup ─────────────────────────────────────
     total_daily = aggregate_total_account_daily(campaign_daily)
@@ -1285,20 +1526,22 @@ def main():
     )
     print("Campaigns ranked by 12-week total profit:")
     for cname, profit in profit_rank:
-        short = cname.replace("HOME INSURANCE-", "").split("-SEARCH")[0]
+        short = short_code(cname)
         print(f"  ${profit:>10,.0f}  {short}")
     print()
 
-    # ── Group full-history tCPA changes by campaign (for elasticity charts) ──
-    elasticity_events_by_campaign: dict[str, list[dict]] = {}
+    # ── Group full-history tCPA changes by campaign_id (for elasticity charts) ──
+    # Keyed by campaign_id (stable across renames), not name. old_value/new_value
+    # map to old_tcpa/new_tcpa for the elasticity module's step-function contract.
+    elasticity_events_by_campaign: dict[int, list[dict]] = {}
     if not tcpa_changes_all.empty:
         for _, c in tcpa_changes_all.iterrows():
             elasticity_events_by_campaign.setdefault(
-                c["campaign_name"], []
+                int(c["campaign_id"]), []
             ).append({
                 "change_date": c["change_date"],
-                "old_tcpa": c["old_tcpa"],
-                "new_tcpa": c["new_tcpa"],
+                "old_tcpa": float(c["old_value"]) if pd.notna(c["old_value"]) else None,
+                "new_tcpa": float(c["new_value"]) if pd.notna(c["new_value"]) else None,
             })
 
     # The elasticity chart wants a longer history than the 12-week
@@ -1474,7 +1717,15 @@ def main():
 
     # ── 3. Per-campaign sheets (sorted by 12-week profit desc) ───
     print("  Generating per-campaign side-by-side charts...")
-    enabled_by_name = {row["campaign_name"]: row for _, row in enabled.iterrows()}
+    enabled_by_name = {row["campaign_name"]: row for _, row in campaigns_df.iterrows()}
+    # Scope-change boundaries (restructured tier shells only), keyed by
+    # current name, filtered to the window. {} if history table unavailable.
+    rename_by_name = fetch_rename_boundaries(conn, window_start, window_end)
+    if rename_by_name:
+        print(f"  Scope-change boundaries in window: "
+              f"{sum(len(v) for v in rename_by_name.values())} across "
+              f"{len(rename_by_name)} campaign(s)")
+    used_tab_names: set = set()
     sheet_count = 0
     for cname, total_profit in profit_rank:
         camp = enabled_by_name.get(cname)
@@ -1484,29 +1735,42 @@ def main():
         if pd.isna(current_tcpa):
             current_tcpa = None
         weekly_df = campaign_weekly.get(cname, pd.DataFrame())
-        # Within-window change events for the weekly chart's overlay lines
-        camp_events_window = change_events_df[
-            change_events_df["campaign_name"] == cname
-        ].to_dict("records")
+        cid = int(camp["campaign_id"])
+        # Within-window change events (id-keyed so pre-rename changes resolve)
+        if change_events_df.empty:
+            camp_events_window = []
+        else:
+            camp_events_window = change_events_df[
+                change_events_df["campaign_id"] == cid
+            ].to_dict("records")
         # Full-history tCPA events for the elasticity chart's step function
-        camp_events_full = elasticity_events_by_campaign.get(cname, [])
+        camp_events_full = elasticity_events_by_campaign.get(cid, [])
+        camp_rename_dates = rename_by_name.get(cname, [])
+        is_paused = campaign_status.get(cname) == "PAUSED"
+        disp_name = f"{cname}  [PAUSED]" if is_paused else cname
 
-        # Sheet name: short campaign name (Excel limit 31 chars)
-        short_name = cname.replace("HOME INSURANCE-", "").split("-SEARCH")[0][:25]
-        sheet_name = short_name[:31]
-        if sheet_name in [s.title for s in wb.worksheets]:
-            sheet_name = f"{short_name[:28]}_2"[:31]
+        # Tab name: tier-aware short code (T1/T2/.. or state abbr), with a
+        # robust dedup loop. Replaces the old 25-char truncation that
+        # collapsed all tier campaigns to one identical, colliding name.
+        base_tab = short_code(cname)[:31]
+        sheet_name = base_tab
+        suffix = 2
+        while sheet_name in used_tab_names:
+            sheet_name = f"{base_tab}_{suffix}"[:31]
+            suffix += 1
+        used_tab_names.add(sheet_name)
 
         try:
             ws_chart = wb.create_sheet(sheet_name)
             # 5-panel weekly chart (left)
             weekly_png = build_4panel_campaign_chart_png(
                 weekly_df=weekly_df,
-                campaign_name=cname,
+                campaign_name=disp_name,
                 current_tcpa=current_tcpa,
                 change_events=camp_events_window,
                 window_start=window_start,
                 window_end=window_end,
+                rename_dates=camp_rename_dates,
             )
             ws_chart.add_image(XLImage(io.BytesIO(weekly_png)), "A1")
             # 3-panel elasticity chart (right). Skip if module not loaded.

@@ -18,7 +18,7 @@ Expected columns on 'State Assignments' (header row auto-detected):
   gp_per_lead roas | ... | Campaign Change? (0=No,1=Yes) | Destination campaign | Change <date> ...
 
 Usage:
-  python build_retier_rollout_plan.py --input google_geo_model_gp_per_lead_2026-06-09.xlsx
+  python C:\Projects\google-ads-ops\analysis\google-geo-analysis\build_retier_rollout_plan.py --input google_geo_model_gp_per_lead_2026-06-09.xlsx
 """
 import argparse, datetime as dt, re
 import pandas as pd, numpy as np

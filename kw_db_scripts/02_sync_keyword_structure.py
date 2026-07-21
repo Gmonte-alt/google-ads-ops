@@ -56,7 +56,7 @@ DB_PATH   = Path(r"C:\Projects\google-ads-ops\db\paid_search.db")
 YAML_PATH = Path(r"C:\Projects\google-ads-ops\google-ads.yaml")
 TODAY     = date.today().isoformat()
 
-MATCH_TYPE_MAP = {2: "BROAD", 3: "PHRASE", 4: "EXACT"}
+MATCH_TYPE_MAP = {2: "EXACT", 3: "PHRASE", 4: "BROAD"}  # Google enum: 2=EXACT,3=PHRASE,4=BROAD (was swapped)
 
 ACCOUNT_MAP = {
     "home":       {
@@ -378,15 +378,18 @@ def upsert_keywords(conn, account_id: int,
                 INSERT INTO keyword_instances
                     (account_id, identity_id, criterion_id, keyword_text,
                      match_type, campaign_id, ad_group_id,
+                     ad_group_criterion_id,
                      campaign_name, ad_group_name, status,
                      cpc_bid_micros, quality_score,
                      first_seen_date, last_seen_date, platform)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google')
                 """,
                 (
                     account_id, identity_id,
                     kw["criterion_id"], kw["keyword_text"], kw["match_type"],
                     kw["campaign_id"], kw["ad_group_id"],
+                    # per-placement edit key: '{ad_group_id}~{criterion_id}'
+                    f'{kw["ad_group_id"]}~{kw["criterion_id"]}',
                     kw["campaign_name"], kw["ad_group_name"],
                     kw["status"], kw["cpc_bid_micros"], kw["quality_score"],
                     TODAY, TODAY,
@@ -406,6 +409,7 @@ def upsert_keywords(conn, account_id: int,
                     quality_score   = ?,
                     campaign_id     = ?,
                     ad_group_id     = ?,
+                    ad_group_criterion_id = ?,
                     campaign_name   = ?,
                     ad_group_name   = ?,
                     last_seen_date  = ?
@@ -417,6 +421,8 @@ def upsert_keywords(conn, account_id: int,
                     identity_id, kw["match_type"],
                     kw["status"], kw["cpc_bid_micros"], kw["quality_score"],
                     kw["campaign_id"], kw["ad_group_id"],
+                    # keep the edit key populated (defensive; Step 1 backfilled existing rows)
+                    f'{kw["ad_group_id"]}~{kw["criterion_id"]}',
                     kw["campaign_name"], kw["ad_group_name"],
                     TODAY,
                     account_id, kw["ad_group_id"], kw["criterion_id"],

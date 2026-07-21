@@ -30,7 +30,7 @@ import argparse
 import collections
 import json
 import sys
-import gads_change_common as C
+import campaign_db_scripts.change_history.gads_change_common as C
 
 EPOCH_FLOOR = "1970-01-01"  # inversion-guard fallback if first_seen_date is null
 

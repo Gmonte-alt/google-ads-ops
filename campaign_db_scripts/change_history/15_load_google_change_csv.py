@@ -25,7 +25,7 @@ import argparse
 import csv
 import os
 import sys
-import gads_change_common as C
+import campaign_db_scripts.change_history.gads_change_common as C
 
 PREAMBLE_ROWS = 2
 EXPECTED_HEADER = ["Date & time", "User", "Campaign", "Ad group", "Changes"]

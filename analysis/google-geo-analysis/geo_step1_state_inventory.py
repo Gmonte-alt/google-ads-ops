@@ -18,8 +18,8 @@ Device convention:
   are MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER. Sum across all device rows.
 
 Usage:
-  python analysis/geo_step1_state_inventory.py
-  python analysis/geo_step1_state_inventory.py --end-date 2026-04-20
+  python analysis\google-geo-analysis\geo_step1_state_inventory.py
+  python analysis\google-geo-analysis\geo_step1_state_inventory.py --end-date 2026-04-20
 """
 
 import sqlite3

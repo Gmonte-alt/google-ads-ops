@@ -75,8 +75,10 @@ TAXONOMY = [
      "Owner-occupied primary residence (HO-3)."),
     ("condo", "Condo Insurance (HO-6)", "product", "homeowners", "home",
      "Owner-occupied condominium unit."),
-    ("renters", "Renters Insurance (HO-4)", "product", None, "home",
-     "Tenant contents + liability; tenant-occupied. (Note: leans online/self-service intent.)"),
+    ("renters", "Renters Insurance (HO-4)", "product", None, "renters",
+     "Tenant contents + liability; tenant-occupied. (Note: leans online/self-service intent.) "
+     "Promoted to vertical='renters' (own campaign grouping: RENTERS INSURANCE). "
+     "Distinct from landlord/rental-property, which is the property-owner side and stays vertical='home'."),
     ("mobile_home", "Mobile / Manufactured Home", "product", "homeowners", "home",
      "Mobile/manufactured/modular home. (Relevant to the MOBILE ad group.)"),
     ("homeowners_extension", "Homeowners Extension (vacant/second/seasonal/land)", "product", "homeowners", "home",
@@ -242,7 +244,8 @@ def ensure_tables(conn):
             product_name  TEXT NOT NULL,
             node_type     TEXT NOT NULL,          -- product | coverage_component | peril
             parent_code   TEXT,                   -- self-ref to product_code
-            vertical      TEXT,                   -- home | commercial (intrinsic)
+            business_unit TEXT,                   -- top-level rollup (Home | Auto | Medicare | Term Life); Home here
+            vertical      TEXT,                   -- home | renters | commercial (finer than business_unit)
             description   TEXT,
             notes         TEXT,
             effective_date TEXT,
@@ -262,29 +265,37 @@ def ensure_tables(conn):
         CREATE INDEX IF NOT EXISTS idx_pt_vertical    ON product_taxonomy(vertical);
         CREATE INDEX IF NOT EXISTS idx_pt_node        ON product_taxonomy(node_type);
     """)
+    # Migration: add business_unit to a pre-existing table (CREATE IF NOT EXISTS won't alter it).
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(product_taxonomy)")]
+    if "business_unit" not in cols:
+        conn.execute("ALTER TABLE product_taxonomy ADD COLUMN business_unit TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pt_business_unit ON product_taxonomy(business_unit)")
 
 
 def seed_taxonomy(conn, dry):
     """Upsert dimension rows on product_code. Returns {product_code: id}."""
     ids, ins, upd = {}, 0, 0
+    # business_unit is the top-level rollup. For this account every product rolls up to "Home"
+    # (even commercial products belong to the Home business unit); vertical is the finer split.
+    BUSINESS_UNIT = "Home"
     for code, name, node, parent, vert, desc in TAXONOMY:
         existing = conn.execute(
             "SELECT id FROM product_taxonomy WHERE product_code = ?", (code,)).fetchone()
         if existing:
             if not dry:
                 conn.execute("""UPDATE product_taxonomy SET product_name=?, node_type=?,
-                    parent_code=?, vertical=?, description=?, source=?
+                    parent_code=?, business_unit=?, vertical=?, description=?, source=?
                     WHERE product_code=?""",
-                    (name, node, parent, vert, desc, SOURCE, code))
+                    (name, node, parent, BUSINESS_UNIT, vert, desc, SOURCE, code))
             ids[code] = existing["id"]
             upd += 1
         else:
             if not dry:
                 cur = conn.execute("""INSERT INTO product_taxonomy
                     (product_code, product_name, node_type, parent_code,
-                     vertical, description, effective_date, source)
-                    VALUES (?,?,?,?,?,?,?,?)""",
-                    (code, name, node, parent, vert, desc, EFFECTIVE, SOURCE))
+                     business_unit, vertical, description, effective_date, source)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (code, name, node, parent, BUSINESS_UNIT, vert, desc, EFFECTIVE, SOURCE))
                 ids[code] = cur.lastrowid
             else:
                 ids[code] = -1

@@ -21,7 +21,7 @@ Usage:
 
 import argparse
 import sys
-import gads_change_common as C
+import campaign_db_scripts.change_history.gads_change_common as C
 
 # Google raw ledger (Model-A: accumulates forward via row_hash upsert).
 DDL_RAW = """

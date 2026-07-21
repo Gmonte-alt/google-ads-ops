@@ -6,7 +6,7 @@ Generates two CSV files per rollout week:
   2. campaign_tier{N}_{date}.csv     — campaign rename + tracking template (import SECOND)
 
 Usage:
-  python google_generate_tier_import.py --week 1
+  python C:\Projects\google-ads-ops\ad_editors_bulk_imports\google_generate_tier_import.py --week 1
   python google_generate_tier_import.py --week 2 --dry-run
   python google_generate_tier_import.py --week 1,2,3,4
 

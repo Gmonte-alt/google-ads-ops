@@ -14,8 +14,8 @@ Checks:
 RUN
 ───
     conda activate paid-search
-    python analysis/check_campaign_perf_is.py
-    python analysis/check_campaign_perf_is.py --account home --days 30
+    python campaign_db_scripts\check_campaign_perf_is.py
+    python campaign_db_scripts\check_campaign_perf_is.py --account home --days 30
 """
 
 import sqlite3

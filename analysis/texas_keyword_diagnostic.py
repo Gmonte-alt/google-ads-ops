@@ -20,8 +20,8 @@ Sheets 1b, 3, 3b, 4 carry instance-derived context columns: match_type_summary,
 keyword_status_summary, ad_group_count, ad_groups_summary, dominant_ad_group_status.
 
 Run:
-  python texas_keyword_diagnostic.py            # writes workbook
-  python texas_keyword_diagnostic.py --dry-run  # prints queries + row counts only
+  python analysis/texas_keyword_diagnostic.py            # writes workbook
+  python analysis/texas_keyword_diagnostic.py --dry-run  # prints queries + row counts only
 """
 
 from __future__ import annotations

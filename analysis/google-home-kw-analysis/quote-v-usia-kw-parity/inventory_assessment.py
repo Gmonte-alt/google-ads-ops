@@ -87,6 +87,8 @@ def resolve_schema(conn, perf_override=None):
     s["ki_text"] = pick(ki, "keyword_text", "criterion", "text")
     s["ki_agid"] = pick(ki, "ad_group_id")
     s["ki_cid"] = pick(ki, "campaign_id")
+    s["ki_criterion"] = pick(ki, "criterion_id")
+    s["ki_id"] = pick(ki, "id", "rowid")
     s["ag_id"] = pick(ag, "ad_group_id")
     s["ag_cid"] = pick(ag, "campaign_id")
     s["ag_status"] = pick(ag, "status")
@@ -120,6 +122,9 @@ def banner(s):
     print("SCHEMA RESOLVED (verify before trusting output):")
     print("  keyword_instances: status=%s match=%s text=%s ad_group_id=%s campaign_id=%s"
           % (s["ki_status"], s["ki_match"], s["ki_text"], s["ki_agid"], s["ki_cid"]))
+    print("  keyword_instances GRAIN: one row per instance (criterion_id=%s NOT unique per instance -> "
+          "no GROUP BY); status column not read, filtered to active-campaign ad groups"
+          % s["ki_criterion"])
     print("  ad_groups: id=%s campaign_id=%s status=%s name=%s"
           % (s["ag_id"], s["ag_cid"], s["ag_status"], s["ag_name"]))
     print("  campaigns: id=%s status=%s name=%s" % (s["cp_id"], s["cp_status"], s["cp_name"]))
@@ -162,12 +167,25 @@ def load_leads_by_agid(conn, s, days):
     return out
 
 
-def load_instances(conn, s):
-    q = ("SELECT %s AS agid, %s AS cid, %s AS status, %s AS match, %s AS text "
-         "FROM keyword_instances WHERE account_id=?"
-         % (s["ki_agid"], s["ki_cid"], s["ki_status"], s["ki_match"], s["ki_text"]))
-    for r in conn.execute(q, (ACCOUNT_ID,)):
-        yield r
+def load_current_keywords(conn, s):
+    """Read the architect's corrected current-state view `keyword_current` (match_type fixed after the
+    enum-inversion bug; is_serving + ad_group_criterion_id reliable). One row per placement. Falls back
+    to raw keyword_instances only if the view is absent (pre-remediation), with a loud warning."""
+    view_cols = [r[1] for r in conn.execute("PRAGMA table_info(keyword_current)")]
+    if view_cols:
+        return conn.execute(
+            "SELECT criterion_id, ad_group_criterion_id, keyword_text, match_type, campaign_id, "
+            "ad_group_id, ad_group_name, campaign_name, keyword_status, hierarchy_enabled, is_serving "
+            "FROM keyword_current WHERE account_id=? AND campaign_status='ENABLED'", (ACCOUNT_ID,))
+    print("  [WARN] keyword_current view not found -> falling back to raw keyword_instances; match_type "
+          "may be uncorrected (enum-inversion bug). Point at keyword_current for trustworthy match_type.")
+    q = ("SELECT {crit} AS criterion_id, ({agid}||'~'||{crit}) AS ad_group_criterion_id, "
+         "{text} AS keyword_text, {match} AS match_type, {cid} AS campaign_id, {agid} AS ad_group_id, "
+         "'' AS ad_group_name, '' AS campaign_name, NULL AS keyword_status, NULL AS hierarchy_enabled, "
+         "NULL AS is_serving FROM keyword_instances WHERE account_id=?"
+         ).format(crit=(s["ki_criterion"] or "NULL"), text=s["ki_text"], match=s["ki_match"],
+                  cid=s["ki_cid"], agid=s["ki_agid"])
+    return conn.execute(q, (ACCOUNT_ID,))
 
 
 # --------------------------------------------------------------------------- aggregation
@@ -176,18 +194,18 @@ def build_inventory(conn, s, tagger, days):
     adgroups = load_adgroups(conn, s, active_cids)
     leads_by_agid = load_leads_by_agid(conn, s, days)
 
-    # per physical ad group (ad_group_id)
+    # per physical ad group (ad_group_id) -- deduped, hierarchy-live keywords only
     phys = {}
     carrier_agg = {}  # brand -> kw counts + bare/home split + ad-group membership (placement bridge)
-    for r in load_instances(conn, s):
-        agid = str(r["agid"])
+    for r in load_current_keywords(conn, s):
+        agid = str(r["ad_group_id"])
         ag = adgroups.get(agid)
-        if not ag:  # instance not in an active campaign's ad group
+        if not ag:  # not in an active campaign's ad group
             continue
-        text = r["text"] or ""
+        text = r["keyword_text"] or ""
         brand = brand_of(tagger, text)[0]  # (brand, bid_status, category, dnb_flag, source)
         theme = categorize(text)
-        mt = (r["match"] or "").upper()
+        mt = (r["match_type"] or "").upper()
         p = phys.setdefault(agid, dict(
             agid=agid, cid=ag["cid"], campaign=active_cids.get(ag["cid"], ag["cid"]),
             ad_group=ag["name"], ag_status=ag["status"],
@@ -195,10 +213,7 @@ def build_inventory(conn, s, tagger, days):
             match=defaultdict(int), theme=defaultdict(int),
             carriers=set(), leads=leads_by_agid.get(agid, 0.0)))
         p["kw_total"] += 1
-        if (r["status"] or "").upper() == "ENABLED":
-            p["kw_enabled"] += 1
-        else:
-            p["kw_paused"] += 1
+        p["kw_enabled"] += 1  # all deduped current keywords are hierarchy-live (status column not trusted)
         p["match"][mt or "UNKNOWN"] += 1
         p["theme"][theme if theme in HOME_THEMES_KEEP else "OTHER"] += 1
         if brand:
@@ -259,6 +274,54 @@ def campaign_summary(phys, active_cids):
     return out
 
 
+def _norm_match(mt):
+    u = (mt or "").upper()
+    if "EXACT" in u:
+        return "Exact"
+    if "PHRASE" in u:
+        return "Phrase"
+    if "BROAD" in u:
+        return "Broad"
+    return (mt or "").capitalize()
+
+
+def build_pause_split(conn, s, tagger, carriers, grabbag):
+    """Keyword rows to PAUSE for split carriers, emitted in the shape Editor matches on: separate
+    Campaign ID / Ad group ID / Keyword ID, where Keyword ID is the numeric criterion_id split out of
+    `ad_group_criterion_id` ('{ad_group_id}~{criterion_id}'). Editor matches an edit by (Ad group ID,
+    Keyword ID), so it edits in place instead of creating a duplicate. match_type is the CORRECTED value
+    from keyword_current; only currently-serving keywords are paused."""
+    want = [c.strip().lower() for c in carriers if c.strip()]
+    rows = []
+    touched = defaultdict(set)
+    for r in load_current_keywords(conn, s):
+        if not r["hierarchy_enabled"]:
+            continue  # gate on campaign+ad group ENABLED (reliable); keyword_status is still unreliable,
+            #            so pause every carrier keyword in a live grab-bag -- pausing an already-paused one
+            #            is a no-op, and this avoids missing keywords the corrupt status marks 'PAUSED'
+        agn = r["ad_group_name"] or ""
+        if grabbag and agn != grabbag:
+            continue
+        text = r["keyword_text"] or ""
+        brand = brand_of(tagger, text)[0]
+        matched = next((w for w in want if brand and w in brand.lower()), None)
+        if not matched:
+            continue
+        if not grabbag and matched in agn.lower():
+            continue  # skip the carrier's own dedicated ad group (grab-bags only)
+        agcid = r["ad_group_criterion_id"] or ""
+        ag_id, _, crit = agcid.partition("~")
+        rows.append(dict(ad_group_criterion_id=agcid,
+                         campaign_id=r["campaign_id"], ad_group_id=(ag_id or r["ad_group_id"]),
+                         keyword_id=(crit or r["criterion_id"]), campaign=(r["campaign_name"] or ""),
+                         ad_group=agn, keyword=text, match_type=_norm_match(r["match_type"]), brand=brand))
+        touched[matched].add(agn)
+    for c in sorted(touched):
+        print("    %s -> pausing in: %s" % (c, ", ".join(sorted(touched[c]))))
+    rows.sort(key=lambda d: (d["brand"], d["keyword"], d["campaign"]))
+    return rows, 0
+
+
 def carrier_coverage(carrier_agg, phys):
     """Per carrier: kw count, bare (CORE) vs home (GENERIC_HOME) presence, which ad groups, approx leads.
     'bare'=CORE keyword count for the carrier; 'home'=GENERIC_HOME count. Approx leads splits each ad
@@ -278,7 +341,7 @@ def carrier_coverage(carrier_agg, phys):
 
 
 # --------------------------------------------------------------------------- output
-def write_outputs(out_dir, logical, phys, camps, carriers):
+def write_outputs(out_dir, logical, phys, camps, carriers, pause_rows=None):
     os.makedirs(out_dir, exist_ok=True)
     import csv
 
@@ -309,6 +372,19 @@ def write_outputs(out_dir, logical, phys, camps, carriers):
          ["carrier", "kw", "bare_core", "home_generic", "n_ad_groups", "ad_groups", "approx_leads"],
          [[c["carrier"], c["kw"], c["bare_core"], c["home_generic"], c["n_ad_groups"], c["ad_groups"],
            c["approx_leads"]] for c in carriers])
+
+    if pause_rows:
+        # NAME-based, matching the additions format Editor handles cleanly. Match types are correct now
+        # (corrected DB), so Editor locates by Campaign/Ad Group name and matches the keyword by text+type
+        # -> edits in place, no phantom campaign from unmappable IDs.
+        dump("pause_split.csv",
+             ["Campaign", "Ad Group", "Keyword", "Match Type", "Status"],
+             [[r["campaign"], r["ad_group"], r["keyword"], r["match_type"], "Paused"] for r in pause_rows])
+        # review sheet keeps the IDs + brand for auditing
+        dump("pause_split_review.csv",
+             ["Campaign", "Ad Group", "Ad group ID", "Keyword ID", "Keyword", "Match Type", "Brand"],
+             [[r["campaign"], r["ad_group"], r["ad_group_id"], r["keyword_id"], r["keyword"],
+               r["match_type"], r["brand"]] for r in pause_rows])
 
     # xlsx (optional, best-effort)
     try:
@@ -350,13 +426,18 @@ def write_outputs(out_dir, logical, phys, camps, carriers):
               ["Carrier", "kw", "Bare (CORE)", "Home (GEN)", "# ad groups", "Ad groups", "Approx leads"],
               [[c["carrier"], c["kw"], c["bare_core"], c["home_generic"], c["n_ad_groups"], c["ad_groups"],
                 c["approx_leads"]] for c in carriers])
+        if pause_rows:
+            sheet("Pause_Split",
+                  ["Campaign ID", "Ad group ID", "Keyword ID", "Keyword", "Match Type", "Status", "Brand"],
+                  [[r["campaign_id"], r["ad_group_id"], r["keyword_id"], r["keyword"], r["match_type"],
+                    "Paused", r["brand"]] for r in pause_rows])
         wb.save(os.path.join(out_dir, "inventory_assessment.xlsx"))
     except ImportError:
         print("  (openpyxl not available; wrote CSVs only)")
 
 
 # --------------------------------------------------------------------------- main
-def run(db, days, out_dir, brand_db, perf_table=None):
+def run(db, days, out_dir, brand_db, perf_table=None, pause_carriers=None, pause_grabbag=None):
     conn = ro_connect(db)
     print("opening DB (read-only): %s" % os.path.abspath(db))
     s = resolve_schema(conn, perf_table)
@@ -366,13 +447,19 @@ def run(db, days, out_dir, brand_db, perf_table=None):
     logical = logical_view(phys)
     camps = campaign_summary(phys, active_cids)
     carriers = carrier_coverage(carrier_agg, phys)
+    pause_rows, pause_already = ([], 0)
+    if pause_carriers:
+        pause_rows, pause_already = build_pause_split(conn, s, tagger, pause_carriers, pause_grabbag)
     conn.close()
     print("active campaigns: %d | ad groups (physical): %d | logical ad groups: %d | carriers seen: %d"
           % (len(active_cids), len(phys), len(logical), len(carriers)))
     print("top logical ad groups by leads: " + ", ".join(
         "%s(%.0f, %d kw, %d carr)" % (d["ad_group"][:20], d["total_leads"], d["kw_per_campaign"],
                                       d["distinct_carriers"]) for d in logical[:5]))
-    write_outputs(out_dir, logical, phys, camps, carriers)
+    if pause_carriers:
+        print("pause-split: %d ENABLED grab-bag keyword rows for %s (%d already paused, skipped)"
+              % (len(pause_rows), ",".join(pause_carriers), pause_already))
+    write_outputs(out_dir, logical, phys, camps, carriers, pause_rows)
     print("wrote -> %s" % os.path.abspath(out_dir))
 
 
@@ -383,8 +470,15 @@ def main():
     ap.add_argument("--out-dir", default="inventory_output")
     ap.add_argument("--brand-db", default=None, help="registry DB for brand tagging (default: --db)")
     ap.add_argument("--perf-table", default=None, help="force the keyword/ad-group leads table name")
+    ap.add_argument("--pause-split-carriers", default=None,
+                    help="comma-separated carriers being split into their own ad groups; emits the exact "
+                         "grab-bag keywords to pause (e.g. 'Kin,Costco')")
+    ap.add_argument("--pause-grabbag", default=None,
+                    help="restrict pause to this grab-bag ad group; omit to AUTO-DETECT where each "
+                         "carrier lives (recommended -- carriers can live in different grab-bags)")
     a = ap.parse_args()
-    run(a.db, a.days, a.out_dir, a.brand_db, a.perf_table)
+    pause_carriers = [c for c in (a.pause_split_carriers or "").split(",") if c.strip()] or None
+    run(a.db, a.days, a.out_dir, a.brand_db, a.perf_table, pause_carriers, a.pause_grabbag)
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ import collections
 import datetime
 import json
 import sys
-import gads_change_common as C
+import campaign_db_scripts.change_history.gads_change_common as C
 from dotenv import load_dotenv
 
 load_dotenv()  # read .env -> GOOGLE_ADS_CONFIGURATION_FILE_PATH, exactly like syncs 03/05

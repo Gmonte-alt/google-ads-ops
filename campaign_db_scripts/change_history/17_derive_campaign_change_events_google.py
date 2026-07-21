@@ -51,7 +51,7 @@ import argparse
 import sys
 import json
 import collections
-import gads_change_common as C
+import campaign_db_scripts.change_history.gads_change_common as C
 
 SOURCE = "google_ui_csv"
 RESOLVED_VIA = "name_match_current"

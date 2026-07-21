@@ -1,6 +1,6 @@
 """Validate the API change-event layer end to end (synthetic)."""
 import subprocess, sqlite3, json, sys, datetime
-import gads_change_common as C
+import campaign_db_scripts.change_history.gads_change_common as C
 import pull_google_change_events_api as P
 
 DB = "synthetic.db"

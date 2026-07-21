@@ -935,9 +935,10 @@ MEDICARE_BRAND_DATA = [
      "carrier_approved"),
 
     ("Aetna", None,
-     "approved", None, None, None, "medicare,life,auto,home",
-     "Major national carrier across multiple verticals. "
-     "Medicare Advantage and Medigap products. CVS Health parent since 2018. "
+     "approved", None, None, None, "medicare,life",
+     "Major national HEALTH/life carrier. Medicare Advantage and Medigap products. "
+     "CVS Health parent since 2018. Does NOT meaningfully sell home/auto P&C -- "
+     "verticals corrected to medicare,life (was erroneously medicare,life,auto,home). "
      "Queries: 'aetna medicare', 'aetna medicare advantage', 'aetna medigap'.",
      "carrier_approved"),
 
@@ -955,15 +956,19 @@ MEDICARE_BRAND_DATA = [
      "carrier_approved"),
 
     ("Anthem", None,
-     "approved", None, None, None, "medicare,auto,home,life",
-     "Multi-vertical insurer, large Medicare Advantage footprint. BCBS licensee. "
+     "approved", None, None, None, "medicare,life",
+     "Multi-vertical HEALTH insurer, large Medicare Advantage footprint. BCBS licensee. "
+     "Does NOT meaningfully sell home/auto P&C -- verticals corrected to medicare,life "
+     "(was erroneously medicare,auto,home,life). "
      "Queries: 'anthem medicare', 'anthem medicare advantage', 'anthem blue cross medicare'.",
      "carrier_approved"),
 
     ("Blue Cross Blue Shield", None,
-     "approved", None, None, None, "medicare,auto,home,life",
-     "BCBS federation -- regional plans across all states. "
+     "approved", None, None, None, "medicare,life",
+     "BCBS federation -- regional HEALTH plans across all states. "
      "Strong Medicare Supplement and Medicare Advantage presence. "
+     "Does NOT meaningfully sell home/auto P&C -- verticals corrected to medicare,life "
+     "(was erroneously medicare,auto,home,life). "
      "Queries: 'blue cross medicare', 'bcbs medicare', 'blue cross medigap'.",
      "carrier_approved"),
 

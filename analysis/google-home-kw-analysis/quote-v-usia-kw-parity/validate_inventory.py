@@ -33,13 +33,26 @@ def build_fixture():
     c.executescript("""
         CREATE TABLE campaigns (account_id INT, campaign_id TEXT, campaign_name TEXT, status TEXT);
         CREATE TABLE ad_groups (account_id INT, ad_group_id TEXT, campaign_id TEXT, ad_group_name TEXT, status TEXT);
-        CREATE TABLE keyword_instances (account_id INT, ad_group_id TEXT, campaign_id TEXT,
-                                        keyword_text TEXT, match_type TEXT, status TEXT);
+        CREATE TABLE keyword_instances (account_id INT, criterion_id INT, id INTEGER, ad_group_id TEXT,
+                                        campaign_id TEXT, keyword_text TEXT, match_type TEXT, status TEXT);
         CREATE TABLE keyword_performance_daily (account_id INT, ad_group_id TEXT, device TEXT,
                                         report_date TEXT, primary_conv_count REAL, primary_conv_value REAL);
         CREATE TABLE brand_registry (id INT, brand_name TEXT, normalized_name TEXT, bid_status TEXT,
                                      brand_category TEXT, verticals TEXT);
         CREATE TABLE brand_registry_keywords (brand_id INT, normalized TEXT);
+        CREATE VIEW keyword_current AS
+          SELECT ki.account_id,
+                 (ki.ad_group_id || '~' || ki.criterion_id) AS ad_group_criterion_id,
+                 ki.criterion_id, ki.keyword_text, ki.match_type,
+                 ki.status AS keyword_status,
+                 ki.campaign_id, c.campaign_name, c.status AS campaign_status,
+                 ki.ad_group_id, ag.ad_group_name, ag.status AS ad_group_status,
+                 (CASE WHEN c.status='ENABLED' AND ag.status='ENABLED' THEN 1 ELSE 0 END) AS hierarchy_enabled,
+                 (CASE WHEN c.status='ENABLED' AND ag.status='ENABLED' AND ki.status='ENABLED'
+                       THEN 1 ELSE 0 END) AS is_serving
+          FROM keyword_instances ki
+          JOIN ad_groups ag ON ag.ad_group_id=ki.ad_group_id AND ag.account_id=ki.account_id
+          JOIN campaigns c ON c.campaign_id=ki.campaign_id AND c.account_id=ki.account_id;
     """)
     # brands (canonical len>=4 embed-match; Kin needs exact variants)
     c.executemany("INSERT INTO brand_registry VALUES (?,?,?,?,?,?)", [
@@ -66,23 +79,31 @@ def build_fixture():
         (1, "31", "C3", "Kin", "ENABLED"),             # in PAUSED campaign -> must be excluded
         (2, "91", "C9", "Small-Carrier", "ENABLED"),   # acct2 -> excluded
     ])
-    # keyword instances
-    rows = []
-    for agid, cid in [("11", "C1"), ("21", "C2")]:  # Small-Carrier grab-bag (both active campaigns)
-        rows += [
-            (1, agid, cid, "kin insurance", "EXACT", "ENABLED"),
-            (1, agid, cid, "kin home insurance", "BROAD", "ENABLED"),
-            (1, agid, cid, "bamboo insurance", "EXACT", "ENABLED"),
-            (1, agid, cid, "hartford insurance", "PHRASE", "PAUSED"),
-        ]
-    for agid, cid in [("12", "C1"), ("22", "C2")]:  # Geico dedicated
-        rows += [
-            (1, agid, cid, "geico", "BROAD", "ENABLED"),
-            (1, agid, cid, "geico home insurance", "EXACT", "ENABLED"),
-        ]
-    rows.append((1, "31", "C3", "kin insurance", "EXACT", "ENABLED"))  # paused campaign
-    rows.append((2, "91", "C9", "geico", "BROAD", "ENABLED"))          # acct2
-    c.executemany("INSERT INTO keyword_instances VALUES (?,?,?,?,?,?)", rows)
+    # keyword instances -- modeling the REAL shape the diagnostic revealed: criterion_id is SHARED across
+    # ad groups (it's the keyword criterion, not the instance), and there is NO row-level duplication --
+    # every (ad_group_id, criterion_id) is unique = one instance. So counts must NOT GROUP BY criterion_id.
+    # cols: account_id, criterion_id, id, ad_group_id, campaign_id, keyword_text, match_type, status
+    rows = [
+        # kin insurance: SAME criterion_id 9001 in both campaigns' Small-Carrier (different ad_group_ids)
+        (1, 9001, 1,  "11", "C1", "kin insurance", "EXACT", "ENABLED"),
+        (1, 9001, 5,  "21", "C2", "kin insurance", "EXACT", "ENABLED"),
+        (1, 9002, 2,  "11", "C1", "kin home insurance", "BROAD", "ENABLED"),
+        (1, 9002, 6,  "21", "C2", "kin home insurance", "BROAD", "ENABLED"),
+        (1, 9003, 3,  "11", "C1", "bamboo insurance", "EXACT", "ENABLED"),
+        (1, 9003, 7,  "21", "C2", "bamboo insurance", "EXACT", "ENABLED"),
+        (1, 9004, 4,  "11", "C1", "hartford insurance", "PHRASE", "ENABLED"),
+        (1, 9004, 8,  "21", "C2", "hartford insurance", "PHRASE", "ENABLED"),
+        # Geico dedicated group (auto-detect pause must SKIP it)
+        (1, 9005, 9,  "12", "C1", "geico", "BROAD", "ENABLED"),
+        (1, 9006, 10, "12", "C1", "geico home insurance", "EXACT", "ENABLED"),
+        (1, 9005, 11, "22", "C2", "geico", "BROAD", "ENABLED"),
+        (1, 9006, 12, "22", "C2", "geico home insurance", "EXACT", "ENABLED"),
+        # kin in PAUSED campaign C3 -> excluded via active-campaign filter
+        (1, 9001, 13, "31", "C3", "kin insurance", "EXACT", "ENABLED"),
+        # account 2 -> excluded
+        (2, 9005, 14, "91", "C9", "geico", "BROAD", "ENABLED"),
+    ]
+    c.executemany("INSERT INTO keyword_instances VALUES (?,?,?,?,?,?,?,?)", rows)
     # leads (device='ALL', recent). Split differs per campaign to test min/max.
     c.executemany("INSERT INTO keyword_performance_daily VALUES (?,?,?,?,?,?)", [
         (1, "11", "ALL", "date('now')", 40.0, 2000.0),  # placeholder; fix below with real date
@@ -100,12 +121,14 @@ def build_fixture():
 
 def main():
     build_fixture()
-    inv.run(FX, days=90, out_dir=OUT, brand_db=FX)
+    inv.run(FX, days=90, out_dir=OUT, brand_db=FX,
+            pause_carriers=["Kin", "Geico"], pause_grabbag=None)  # auto-detect
     import csv
     logical = {r["ad_group"]: r for r in csv.DictReader(open(os.path.join(OUT, "adgroup_logical.csv")))}
     phys = list(csv.DictReader(open(os.path.join(OUT, "adgroup_physical.csv"))))
     carriers = {r["carrier"]: r for r in csv.DictReader(open(os.path.join(OUT, "carrier_coverage.csv")))}
     camps = {r["campaign"]: r for r in csv.DictReader(open(os.path.join(OUT, "campaign_summary.csv")))}
+    pause = list(csv.DictReader(open(os.path.join(OUT, "pause_split.csv"))))
 
     fails = []
 
@@ -146,6 +169,25 @@ def main():
     if "Geico" in carriers:
         ck(int(carriers["Geico"]["bare_core"]) >= 2 and int(carriers["Geico"]["home_generic"]) >= 2,
            "Geico should show both bare and home variants")
+
+    # pause-split reads corrected keyword_current, emits Editor-matchable split IDs, pauses only serving:
+    ck(len(pause) == 4, "pause should emit 4 Kin rows (2 kw x 2 campaigns), got %d" % len(pause))
+    ck(all(p["Status"] == "Paused" for p in pause), "pause rows must be Status=Paused")
+    ck(all(p.get("Keyword ID") and p.get("Ad group ID") for p in pause),
+       "every pause row must carry separate Ad group ID + Keyword ID (Editor matches on the pair)")
+    # Keyword ID is the numeric criterion (shared), Ad group ID disambiguates the placement
+    ck({p["Keyword ID"] for p in pause} == {"9001", "9002"},
+       "Keyword IDs should be the criterion numbers {9001,9002}, got %s" % {p["Keyword ID"] for p in pause})
+    ck({p["Ad group ID"] for p in pause} == {"11", "21"},
+       "Ad group IDs should be {11,21}, got %s" % {p["Ad group ID"] for p in pause})
+    ck(all("kin" in p["Keyword"].lower() for p in pause), "pause set must be Kin-only (Geico skipped)")
+    ck(not any("geico" in p["Keyword"].lower() for p in pause), "Geico must be skipped (own group)")
+    kin_ins = [p for p in pause if p["Keyword"] == "kin insurance"]
+    ck(len(kin_ins) == 2 and all(p["Match Type"] == "Exact" for p in kin_ins),
+       "'kin insurance' should be Exact x2 (corrected match_type from keyword_current) -> %s"
+       % [p["Match Type"] for p in kin_ins])
+    # C3 kin (paused campaign) excluded by is_serving/campaign filter; acct2 excluded
+    ck(len(pause) == 4, "C3 (paused campaign) kin must not appear -- is_serving/hierarchy gate")
 
     print()
     if fails:

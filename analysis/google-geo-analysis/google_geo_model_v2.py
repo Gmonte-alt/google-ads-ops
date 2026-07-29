@@ -13,7 +13,7 @@ CLUSTERING FEATURE (--cluster-feature):
   rpl          = revenue / conversion (pure value; the original Microsoft basis — ignores CPC).
 
 GOOGLE DATA LAYER (vs the Microsoft core):
-  - account_id = 1; source campaign_performance_geo_daily (sums device rows; no 'ALL' row;
+  - account_id = 1; source campaign_performance_geo_daily_search (sums device rows; no 'ALL' row;
     no network/location_type). Native conversion basis (same as the workbook RPL_Redistribution):
     RPL/GP ordering sound; absolute $ run ~10-13% conservative.
   - search-only (no audience network); single-state campaigns (--exclude-states) are carved out
@@ -58,7 +58,7 @@ import pandas as pd
 DEFAULT_DB_PATH = r"C:\Projects\google-ads-ops\db\paid_search.db"
 DEFAULT_OUTPUT_DIR = r"C:\Projects\google-ads-ops\analysis\google-geo-analysis\output"
 ACCOUNT_ID = 1
-GEO_TABLE = "campaign_performance_geo_daily"
+GEO_TABLE = "campaign_performance_geo_daily_search"
 CLICK_THRESHOLD = 200
 TARGET_ROAS = 1.50
 DEFAULT_K = 7
@@ -817,7 +817,7 @@ def write_workbook(path, windows, k, rpl_blend, click_threshold, feature, result
         ("profile (Tier 1 cheap/efficient/positive-margin; Tier 2 premium/high-value/thin-margin;", False),
         ("Tier 3 volatile mid-pack; Tier 4 break-even/volume) in one number.", False),
         ("", False),
-        ("Google data: account_id=1; campaign_performance_geo_daily (sum device rows; native conv,", False),
+        ("Google data: account_id=1; campaign_performance_geo_daily_search (sum device rows; native conv,", False),
         ("~10-13% conservative on $); search-only; single-state campaigns excluded from the pool.", False),
         ("tROAS account: tier_target_tcpa_analytical is reference only; the output is tier membership.", False),
     ]

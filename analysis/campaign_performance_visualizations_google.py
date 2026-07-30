@@ -143,7 +143,7 @@ def fetch_enabled_campaigns(conn) -> pd.DataFrame:
 
 
 def fetch_latest_data_date(conn) -> date | None:
-    """Return MAX(date) from campaign_performance_daily for this account.
+    """Return MAX(date) from campaign_performance_daily_search for this account.
 
     This is the most recent date we have spend data for, regardless of
     whether the week containing it is complete. Used to anchor the
@@ -155,7 +155,7 @@ def fetch_latest_data_date(conn) -> date | None:
     row = conn.execute(
         """
         SELECT MAX(cpd.date)
-        FROM campaign_performance_daily cpd
+        FROM campaign_performance_daily_search cpd
         JOIN campaigns c ON cpd.campaign_id = c.campaign_id
         WHERE c.account_id = ?
         """,
@@ -168,7 +168,7 @@ def fetch_latest_data_date(conn) -> date | None:
 
 def fetch_latest_complete_week(conn) -> tuple[date, date]:
     """Determine the most recent complete Mon-Sun week available in
-    campaign_performance_daily for this account.
+    campaign_performance_daily_search for this account.
 
     Logic: find MAX(date) for the account, then return the Mon-Sun week
     that is fully covered. If the latest date IS a Sunday, that week is
@@ -182,7 +182,7 @@ def fetch_latest_complete_week(conn) -> tuple[date, date]:
     latest = fetch_latest_data_date(conn)
     if latest is None:
         raise RuntimeError(
-            f"No rows found in campaign_performance_daily for account_id={ACCOUNT_ID}"
+            f"No rows found in campaign_performance_daily_search for account_id={ACCOUNT_ID}"
         )
     # weekday(): Mon=0 ... Sun=6. A complete week ends on Sunday (weekday=6).
     weekday = latest.weekday()
@@ -199,7 +199,7 @@ def fetch_campaign_daily(conn, campaign_name: str,
                          start_date: date, end_date: date) -> pd.DataFrame:
     """Daily campaign metrics. Same dual-source pattern as the elasticity
     script and efficiency_frontier:
-      • Spend from campaign_performance_daily (device='ALL' to skip the
+      • Spend from campaign_performance_daily_search (device='ALL' to skip the
         per-device breakdown rows, which would otherwise double-count).
       • Conversions from keyword_performance_daily aggregated to the
         campaign × date grain (device='ALL', geo_state='ALL'), summing
@@ -212,7 +212,7 @@ def fetch_campaign_daily(conn, campaign_name: str,
     SELECT
         cpd.date AS report_date,
         SUM(cpd.cost_micros) / 1e6 AS spend_usd
-    FROM campaign_performance_daily cpd
+    FROM campaign_performance_daily_search cpd
     JOIN campaigns c ON cpd.campaign_id = c.campaign_id
     WHERE c.account_id = ?
       AND c.campaign_name = ?

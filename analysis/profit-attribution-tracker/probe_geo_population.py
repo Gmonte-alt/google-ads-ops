@@ -18,7 +18,7 @@ args = ap.parse_args()
 conn = sqlite3.connect(args.db)
 conn.execute("PRAGMA query_only = ON")
 
-for tbl in ("geo_performance_daily", "campaign_performance_geo_daily"):
+for tbl in ("geo_performance_daily", "campaign_performance_geo_daily_search"):
     print("=" * 70)
     print(tbl)
     print("=" * 70)

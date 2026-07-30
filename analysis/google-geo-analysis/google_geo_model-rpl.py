@@ -9,7 +9,7 @@ headline model is C2_weighted_kmeans.
 
 GOOGLE-SPECIFIC CHANGES (only the data layer + scope differ):
   - account_id = 1 (Google Home).
-  - Source table: campaign_performance_geo_daily (NOT geo_performance_daily). It has no
+  - Source table: campaign_performance_geo_daily_search (NOT geo_performance_daily). It has no
     'ALL' device row, so state totals SUM the device rows (device <> 'ALL'), and it has
     no 'network' or 'location_type' columns. This mirrors analyze_geo_state_device.py,
     so the tiers stay consistent with the workbook's RPL_Redistribution.
@@ -48,7 +48,7 @@ import pandas as pd
 DEFAULT_DB_PATH = r"C:\Projects\google-ads-ops\db\paid_search.db"
 DEFAULT_OUTPUT_DIR = r"C:\Projects\google-ads-ops\analysis\google-geo-analysis\output"
 ACCOUNT_ID = 1
-GEO_TABLE = "campaign_performance_geo_daily"
+GEO_TABLE = "campaign_performance_geo_daily_search"
 CLICK_THRESHOLD = 200          # 12w eligibility (tunable; Google's pool is ~26-28 states)
 TARGET_ROAS = 1.50             # ideal_tcpa = RPL / TARGET_ROAS (analytical, ROAS-factored)
 DEFAULT_K = 6
@@ -92,7 +92,7 @@ def current_label(name: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Data pull (Google: campaign_performance_geo_daily, sum device rows, search-only)
+# Data pull (Google: campaign_performance_geo_daily_search, sum device rows, search-only)
 # ----------------------------------------------------------------------------
 
 def resolve_end_date(conn: sqlite3.Connection, override: str | None) -> date:
@@ -502,7 +502,7 @@ def write_workbook(path: Path, windows: Windows, k: int, rpl_blend: float,
         ("Tiers are relabelled TIER ONE..N by descending mean RPL. RPL blend mixes 4w into 12w per --rpl-blend.", False),
         ("", False),
         ("Google-specific:", True),
-        ("- account_id=1; source campaign_performance_geo_daily (sums device rows; no 'ALL' row; no network/location_type).", False),
+        ("- account_id=1; source campaign_performance_geo_daily_search (sums device rows; no 'ALL' row; no network/location_type).", False),
         ("- Native conversion basis (same as the workbook RPL_Redistribution): RPL ordering sound; $ ~10-13% conservative.", False),
         ("- Search-only: Microsoft search-vs-audience network economics and the Master Tier Review apparatus are NOT ported.", False),
         ("- tROAS account: ideal_tcpa = RPL/1.5 is the clustering feature and an analytical destination, NOT an operational bid.", False),

@@ -13,7 +13,7 @@ Per-band per-day GP = conv/day * (rpl - cpl). Two-period bridge (A=April, B=rece
    interaction= (convB - convA) * ((rplB-rplA) - (cplB-cplA))
 Identity holds exactly: volume+value+efficiency+interaction = convB*gplB - convA*gplA.
 
-Basis: campaign_performance_geo_daily, account 1, native conversions (sum device rows;
+Basis: campaign_performance_geo_daily_search, account 1, native conversions (sum device rows;
 ~10-13% conservative on $; the SPLIT is robust, absolute $ run light). Single-state campaigns
 (California/Texas/Florida) appear in the band view (CA carved out) and as 'Standalone' in the
 zone view. Per-day normalization makes the unequal windows comparable (matches the workbook).
@@ -31,7 +31,7 @@ import numpy as np, pandas as pd
 DEFAULT_DB = r"C:\Projects\google-ads-ops\db\paid_search.db"
 DEFAULT_OUT = r"C:\Projects\google-ads-ops\analysis\google-geo-analysis\output"
 ACCOUNT_ID = 1
-GEO = "campaign_performance_geo_daily"
+GEO = "campaign_performance_geo_daily_search"
 HIGH, MIDLO = 75.0, 45.0
 CARVE = {"California", "Texas", "Florida"}
 BANDS = ["California", "High (>=75)", "Mid (45-75)", "Low (<45)"]
@@ -396,7 +396,7 @@ def write_wb(path, detail, band_b, tier_b, cb_b, mc, days_a, days_r, a0, a1, r0,
     notes = [
         ("GP bridge — methodology", True), ("", False),
         (f"Windows: April {a0}..{a1} ({days_a}d) vs Recent {r0}..{r1} ({days_r}d). All per-day.", False),
-        ("Source: campaign_performance_geo_daily, account 1, native conv (sum device rows). ~10-13% conservative on $.", False),
+        ("Source: campaign_performance_geo_daily_search, account 1, native conv (sum device rows). ~10-13% conservative on $.", False),
         ("RPL bands by April RPL (fallback combined): High>=75 / Mid 45-75 / Low<45 / California carve-out.", False),
         ("Tiers read directly from the google_geo_model output (State Assignments + Below Threshold),", False),
         ("so they always equal the model run; CA/TX/FL = Standalone. No separate ledger.", False),

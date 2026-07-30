@@ -201,7 +201,7 @@ def fetch_state_profiles(conn, tier_ids, start_date, end_date):
             SUM(cpg.cost_micros) / 1e6         AS spend,
             SUM(cpg.conversions)               AS conversions,
             SUM(cpg.conversion_value)          AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND cpg.campaign_id IN ({placeholders})

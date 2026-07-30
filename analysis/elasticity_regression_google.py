@@ -352,7 +352,7 @@ def fetch_campaign_daily(conn, campaign_name: str,
       rank_lost_is_avg.
 
     IMPORTANT — diverges from Microsoft script:
-      • Spend & impressions come from campaign_performance_daily filtered
+      • Spend & impressions come from campaign_performance_daily_search filtered
         to device='ALL' (per the efficiency_frontier convention — there's
         a per-device row AND a rollup row, summing all of them double-counts).
       • Conversions come from keyword_performance_daily aggregated to the
@@ -366,7 +366,7 @@ def fetch_campaign_daily(conn, campaign_name: str,
         SUM(cpd.cost_micros) / 1e6        AS spend_usd,
         SUM(cpd.impressions)              AS impressions,
         AVG(cpd.search_rank_lost_is)      AS rank_lost_is_avg
-    FROM campaign_performance_daily cpd
+    FROM campaign_performance_daily_search cpd
     JOIN campaigns c ON cpd.campaign_id = c.campaign_id
     WHERE c.account_id   = ?
       AND c.campaign_name = ?

@@ -1,7 +1,7 @@
 """
 analyze_geo_state_device.py  — read-only: state x device RPL/CvR/CPC, A vs B
 ============================================================================
-Google Home (account_id=1) only. Source: campaign_performance_geo_daily,
+Google Home (account_id=1) only. Source: campaign_performance_geo_daily_search,
 aggregated across campaign_id up to geo_state, MOBILE/DESKTOP + a summed TOTAL.
 
 Runs THREE pre-flight checks first (each gates trust in the output):
@@ -34,7 +34,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 DB = Path(r"C:\Projects\google-ads-ops\db\paid_search.db")
 ACCT = 1
-GEO = "campaign_performance_geo_daily"
+GEO = "campaign_performance_geo_daily_search"
 
 
 def parse_args():

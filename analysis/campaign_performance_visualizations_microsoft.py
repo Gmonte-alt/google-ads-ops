@@ -377,7 +377,8 @@ def fetch_campaign_daily_split(conn, campaign_name, start_date, end_date):
 # WEEKLY AGGREGATION
 # ═══════════════════════════════════════════════════════════════════
 
-def aggregate_weekly(daily_df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_weekly(daily_df: pd.DataFrame,
+                     data_through: date | None = None) -> pd.DataFrame:
     """Roll up daily data to ISO weeks (Mon-Sun).
 
     Returns columns: week_start (Mon date), week_end (Sun date),
@@ -386,12 +387,23 @@ def aggregate_weekly(daily_df: pd.DataFrame) -> pd.DataFrame:
     CPA and RPL are weighted ratios (sum spend / sum conv, etc.) — NOT
     averages of daily values. This matches how the strategic script
     computes weekly aggregates.
+
+    `data_through`: if set, daily rows AFTER this date are dropped before
+    aggregation. Used to truncate only the most recent (in-progress) week to
+    complete-revenue dates — e.g. on a Monday morning when yesterday's
+    (Sunday's) all-conversion revenue hasn't loaded yet, the last week
+    aggregates Mon-Sat instead of understating a full Mon-Sun. All earlier
+    weeks sit entirely before the cutoff and are unaffected.
     """
     if daily_df.empty:
         return pd.DataFrame()
 
     df = daily_df.copy()
     df["report_date"] = pd.to_datetime(df["report_date"])
+    if data_through is not None:
+        df = df[df["report_date"].dt.date <= data_through]
+        if df.empty:
+            return pd.DataFrame()
     # ISO week: Monday is start of week
     df["week_start"] = df["report_date"] - pd.to_timedelta(
         df["report_date"].dt.weekday, unit="D"
@@ -411,6 +423,34 @@ def aggregate_weekly(daily_df: pd.DataFrame) -> pd.DataFrame:
     agg["profit"] = agg["conv_value"] - agg["spend"]
 
     return agg
+
+
+def detect_revenue_complete_through(campaign_daily: dict,
+                                    window_end: date) -> date | None:
+    """Find the latest date (<= window_end) with positive account-level
+    revenue (conv_value = all_conversion_value, summed across all campaigns
+    and both networks).
+
+    Revenue lags ~1 day in the ad platform: the most recent day(s) can carry
+    spend and conversions but no revenue yet. That latest positive-revenue
+    date is treated as the last "complete-revenue" day; the caller truncates
+    the in-progress week to it so week-over-week revenue/RPL/ROAS/profit
+    aren't understated. Returns None if there's no revenue anywhere (nothing
+    to truncate against).
+
+    Assumption: all dates on/before the returned date have complete revenue.
+    That holds for a normal tail lag; a genuine mid-window zero-revenue day
+    would be treated as complete (its earlier position keeps it in-window).
+    """
+    frames = [df[["report_date", "conv_value"]]
+              for df in campaign_daily.values() if not df.empty]
+    if not frames:
+        return None
+    allrev = pd.concat(frames, ignore_index=True)
+    allrev["d"] = pd.to_datetime(allrev["report_date"]).dt.date
+    by_date = allrev.groupby("d")["conv_value"].sum()
+    positive = [d for d, v in by_date.items() if v > 1e-6 and d <= window_end]
+    return max(positive) if positive else None
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -496,6 +536,7 @@ def build_4panel_campaign_chart_png(
     window_start: date,
     window_end: date,
     rename_dates: list | None = None,
+    last_week_note: str | None = None,
 ) -> bytes:
     """5-panel weekly chart for one campaign:
        Panel 1 (top):    weekly conversions (bar chart)
@@ -539,6 +580,11 @@ def build_4panel_campaign_chart_png(
     ax1.set_ylabel("Weekly conversions", fontsize=10)
     ax1.set_title(f"{campaign_name}\n12-week performance: {window_start} to {window_end}",
                   fontsize=11, fontweight="bold", loc="left")
+    if last_week_note:
+        # Flag the truncated most-recent week so a shorter final bar isn't
+        # misread as a performance drop.
+        fig.text(0.995, 0.997, last_week_note, ha="right", va="top",
+                 fontsize=8, style="italic", color="#B22222")
     ax1.grid(True, alpha=0.3, axis="y")
 
     # ── Panel 2: weekly ROAS ───────────────────────────────────────
@@ -1496,20 +1542,47 @@ def main():
             n_skip_no_contrib += 1
             continue
 
-        weekly = aggregate_weekly(combined)
         campaign_daily[cname] = combined
         campaign_search_daily[cname] = search_only
         campaign_audience_daily[cname] = audience_only
-        campaign_weekly[cname] = weekly
         campaign_status[cname] = status
         n_incl += 1
 
     print(f"Campaigns included: {n_incl} "
           f"(skipped, no spend or revenue in window: {n_skip_no_contrib})")
 
+    # ── Complete-revenue cutoff for the most recent week ─────────────
+    # Revenue (all_conversion_value) lags ~1 day, so on a morning run the
+    # last week's final day(s) may have spend/conversions but no revenue yet.
+    # Detect the latest complete-revenue date and truncate ONLY the last week
+    # to it; every earlier week stays a full Mon-Sun. Re-running once the
+    # missing day's revenue loads restores the full week automatically.
+    revenue_through = detect_revenue_complete_through(campaign_daily, window_end)
+    last_week_monday = window_end - timedelta(days=window_end.weekday())
+    last_week_partial = revenue_through is not None and revenue_through < window_end
+    last_week_note = None
+    if last_week_partial:
+        dow = revenue_through.strftime("%a")
+        print(f"  Revenue complete through {revenue_through} ({dow}); last week "
+              f"({last_week_monday} to {window_end}) truncated to Mon-{dow} so "
+              f"w/w revenue/RPL/ROAS/profit aren't understated")
+        last_week_note = (f"Last week partial: Mon-{dow} only "
+                          f"(revenue complete through {revenue_through:%b %d}). "
+                          f"Re-run after the remaining day(s) load for a full week.")
+        if revenue_through < last_week_monday:
+            print("  ⚠ revenue lag exceeds a full week — the most recent week "
+                  "has little or no complete-revenue data")
+    elif revenue_through is None:
+        print("  ⚠ no positive revenue found in window; weekly aggregation not "
+              "truncated")
+
+    # ── Aggregate weekly (last week truncated to complete-revenue dates) ──
+    for cname, combined in campaign_daily.items():
+        campaign_weekly[cname] = aggregate_weekly(combined, data_through=revenue_through)
+
     # ── Total-account rollup ─────────────────────────────────────
     total_daily = aggregate_total_account_daily(campaign_daily)
-    total_weekly = aggregate_weekly(total_daily)
+    total_weekly = aggregate_weekly(total_daily, data_through=revenue_through)
     blended_tcpa = compute_blended_tcpa(campaign_daily)
     print(f"Account-level rollup: {len(total_daily)} daily rows, "
           f"{len(total_weekly)} weeks")
@@ -1669,6 +1742,7 @@ def main():
                                # campaigns' change events on this view
             window_start=window_start,
             window_end=window_end,
+            last_week_note=last_week_note,
         )
         ws_total.add_image(XLImage(io.BytesIO(weekly_png)), "A4")
         # 3-panel elasticity, anchored to the right.
@@ -1771,6 +1845,7 @@ def main():
                 window_start=window_start,
                 window_end=window_end,
                 rename_dates=camp_rename_dates,
+                last_week_note=last_week_note,
             )
             ws_chart.add_image(XLImage(io.BytesIO(weekly_png)), "A1")
             # 3-panel elasticity chart (right). Skip if module not loaded.

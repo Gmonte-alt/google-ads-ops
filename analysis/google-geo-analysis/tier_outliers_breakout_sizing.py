@@ -249,7 +249,7 @@ def probe_data_availability(conn, campaigns):
                MIN(date) AS first_date,
                MAX(date) AS last_date,
                COUNT(*) AS row_count
-          FROM campaign_performance_geo_daily
+          FROM campaign_performance_geo_daily_search
          WHERE account_id = ?
            AND campaign_id IN ({placeholders})
          GROUP BY campaign_id
@@ -335,7 +335,7 @@ def fetch_geo_aggregate(conn, campaign_ids, start_date, end_date,
                SUM(cost_micros)/1e6     AS spend,
                SUM(conversions)         AS conversions,
                SUM(conversion_value)    AS revenue
-          FROM campaign_performance_geo_daily
+          FROM campaign_performance_geo_daily_search
          WHERE account_id = ?
            {campaign_clause}
            AND date BETWEEN ? AND ?

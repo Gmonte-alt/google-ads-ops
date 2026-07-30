@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS assets (
                                                  -- sitelink silently not serving is a thing this DB
                                                  -- must surface (performance_label deferred to Phase 2)
     -- thematic tags (May design; populated by analysis/tagging, not the API sync;
+    -- theme_tag holds ANGLE-FAMILY values -- validates vs creative_angle_taxonomy
+    -- dimension='angle_family' (rsa_ads.theme_tag uses dimension='intent_set';
+    -- never union theme_tags across tables without translating);
     -- taxonomy must stay consistent with the V11 RSA angle-family taxonomy)
     theme_tag            TEXT,
     usp_category         TEXT,

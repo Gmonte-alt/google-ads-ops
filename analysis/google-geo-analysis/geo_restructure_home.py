@@ -18,10 +18,10 @@ Scope & methodology (locked in discovery thread):
     what was included vs excluded.
 
 Device convention:
-  campaign_performance_geo_daily has NO device='ALL' rollup.
+  campaign_performance_geo_daily_search has NO device='ALL' rollup.
   Sum across all device rows for daily totals.
 
-  campaign_performance_daily (for IS join) IS expected to have a
+  campaign_performance_daily_search (for IS join) IS expected to have a
   device='ALL' rollup; the script verifies before using it and
   falls back to an impression-weighted average if 'ALL' is absent.
 
@@ -134,11 +134,11 @@ def tier_campaign_id_map(conn):
 
 def verify_daily_has_all_rollup(conn):
     """
-    Check whether campaign_performance_daily has device='ALL' rollup rows.
+    Check whether campaign_performance_daily_search has device='ALL' rollup rows.
     Returns True if 'ALL' exists, False otherwise.
     """
     row = conn.execute(
-        "SELECT COUNT(*) AS n FROM campaign_performance_daily "
+        "SELECT COUNT(*) AS n FROM campaign_performance_daily_search "
         "WHERE account_id = ? AND device = 'ALL'",
         (ACCOUNT_ID,)
     ).fetchone()
@@ -161,7 +161,7 @@ def fetch_full_inventory(conn):
             SUM(cpg.cost_micros) / 1e6 AS spend,
             SUM(cpg.conversions)       AS conversions,
             SUM(cpg.conversion_value)  AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND cpg.geo_state IS NOT NULL
@@ -241,7 +241,7 @@ def fetch_tier_state_profiles(conn, tier_ids, start_date, end_date):
             SUM(cpg.cost_micros) / 1e6         AS spend,
             SUM(cpg.conversions)               AS conversions,
             SUM(cpg.conversion_value)          AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND cpg.campaign_id IN ({placeholders})
@@ -689,7 +689,7 @@ def colorado_isolation(conn, tier2_id, start_date, end_date):
             SUM(cost_micros)/1e6 AS spend,
             SUM(conversions)     AS conversions,
             SUM(conversion_value) AS revenue
-        FROM campaign_performance_geo_daily
+        FROM campaign_performance_geo_daily_search
         WHERE account_id = ? AND campaign_id = ?
           AND geo_state = ? AND date BETWEEN ? AND ?
     """, (ACCOUNT_ID, tier2_id, COLORADO,
@@ -702,7 +702,7 @@ def colorado_isolation(conn, tier2_id, start_date, end_date):
             SUM(cost_micros)/1e6 AS spend,
             SUM(conversions)     AS conversions,
             SUM(conversion_value) AS revenue
-        FROM campaign_performance_geo_daily
+        FROM campaign_performance_geo_daily_search
         WHERE account_id = ? AND campaign_id = ?
           AND date BETWEEN ? AND ?
     """, (ACCOUNT_ID, tier2_id,
@@ -744,7 +744,7 @@ def fetch_account_weekly_trend(conn, end_date, excluded_ids):
             SUM(cpg.cost_micros)/1e6 AS spend,
             SUM(cpg.conversions) AS conversions,
             SUM(cpg.conversion_value) AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         WHERE cpg.account_id = ?
           AND cpg.date >= ?
           AND cpg.date <= ?
@@ -827,7 +827,7 @@ def fetch_state_weekly_trend(conn, end_date, states, excluded_ids):
             SUM(cpg.cost_micros)/1e6  AS spend,
             SUM(cpg.conversions)      AS conversions,
             SUM(cpg.conversion_value) AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         WHERE cpg.account_id = ?
           AND cpg.date >= ?
           AND cpg.date <= ?
@@ -909,7 +909,7 @@ def fetch_weekly_trend(conn, end_date):
             SUM(cpg.cost_micros)/1e6 AS spend,
             SUM(cpg.conversions)     AS conversions,
             SUM(cpg.conversion_value) AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND cpg.date BETWEEN ? AND ?
@@ -1414,7 +1414,7 @@ def main():
 
     # Verify daily table device convention
     has_all = verify_daily_has_all_rollup(conn)
-    print(f"\ncampaign_performance_daily has device='ALL' rollup: {has_all}")
+    print(f"\ncampaign_performance_daily_search has device='ALL' rollup: {has_all}")
 
     # Resolve PMAX campaign IDs for exclusion
     pmax_ids = fetch_pmax_campaign_ids(conn)
@@ -1455,7 +1455,7 @@ def main():
         for kw, info in tier_map.items():
             row = conn.execute("""
                 SELECT AVG(search_rank_lost_is) AS avg_is
-                FROM campaign_performance_daily
+                FROM campaign_performance_daily_search
                 WHERE account_id = ? AND campaign_id = ? AND device = 'ALL'
                   AND date BETWEEN ? AND ?
             """, (ACCOUNT_ID, info["id"],
@@ -1466,7 +1466,7 @@ def main():
         for kw, info in tier_map.items():
             rows = conn.execute("""
                 SELECT date, device, impressions, search_rank_lost_is
-                FROM campaign_performance_daily
+                FROM campaign_performance_daily_search
                 WHERE account_id = ? AND campaign_id = ?
                   AND date BETWEEN ? AND ?
             """, (ACCOUNT_ID, info["id"],
@@ -1657,21 +1657,21 @@ def main():
 
     # ── Step 7 (diagnostic) ───────────────────────────────────────────
     total_geo_rows = conn.execute(
-        "SELECT COUNT(*) AS n FROM campaign_performance_geo_daily "
+        "SELECT COUNT(*) AS n FROM campaign_performance_geo_daily_search "
         "WHERE account_id = ?", (ACCOUNT_ID,)).fetchone()["n"]
     date_range = conn.execute(
-        "SELECT MIN(date) AS mn, MAX(date) AS mx FROM campaign_performance_geo_daily "
+        "SELECT MIN(date) AS mn, MAX(date) AS mx FROM campaign_performance_geo_daily_search "
         "WHERE account_id = ?", (ACCOUNT_ID,)).fetchone()
     device_dist = conn.execute(
         "SELECT device, COUNT(*) AS n, SUM(cost_micros)/1e6 AS sp "
-        "FROM campaign_performance_geo_daily WHERE account_id = ? "
+        "FROM campaign_performance_geo_daily_search WHERE account_id = ? "
         "GROUP BY device ORDER BY n DESC", (ACCOUNT_ID,)).fetchall()
 
     # Lookup PMAX stats for diagnostic
     pmax_stats = conn.execute("""
         SELECT COUNT(*) AS n, SUM(cost_micros)/1e6 AS sp,
                MIN(date) AS mn, MAX(date) AS mx
-        FROM campaign_performance_geo_daily
+        FROM campaign_performance_geo_daily_search
         WHERE account_id = ? AND campaign_id IN ({})
     """.format(",".join("?" * len(pmax_ids)) if pmax_ids else "NULL"),
         [ACCOUNT_ID] + list(pmax_ids) if pmax_ids else [ACCOUNT_ID]
@@ -1683,9 +1683,9 @@ def main():
         "Analysis window (end)": end_date.isoformat(),
         "Window days": args.days,
         "Last complete ISO week": f"{last_iy}-W{last_iw:02d}",
-        "campaign_performance_geo_daily rows": f"{total_geo_rows:,}",
+        "campaign_performance_geo_daily_search rows": f"{total_geo_rows:,}",
         "geo date range": f"{date_range['mn']} → {date_range['mx']}",
-        "device rollup 'ALL' in campaign_performance_daily": str(has_all),
+        "device rollup 'ALL' in campaign_performance_daily_search": str(has_all),
         "device distribution (geo_daily, all time)":
             "; ".join(f"{r['device']}: {r['n']:,} rows, ${r['sp']:,.0f}"
                       for r in device_dist),

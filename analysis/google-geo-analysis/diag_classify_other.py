@@ -48,7 +48,7 @@ rows = conn.execute("""
     WHERE c.account_id = ?
       AND c.campaign_id IN (
         SELECT DISTINCT campaign_id
-        FROM campaign_performance_geo_daily
+        FROM campaign_performance_geo_daily_search
         WHERE account_id = ?
       )
     ORDER BY c.campaign_name

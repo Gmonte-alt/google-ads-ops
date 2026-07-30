@@ -104,3 +104,26 @@ def categorize(changes_raw, campaign_col=None, ad_group_col=None):
                     "klass": klass, "count": _count(text), "subtype": None}
     return {"category": "other", "grain": None, "action": None,
             "klass": M, "count": 1, "subtype": (text.split("\n")[0][:40] or None)}
+
+def split_blocks(changes_raw):
+    """Split a Changes cell into sub-change blocks: one UNINDENTED header line plus the
+    INDENTED detail lines beneath it (Google indents details by 2 spaces)."""
+    text = _norm(changes_raw)
+    blocks, cur = [], []
+    for ln in text.split("\n"):
+        if not ln.strip():
+            continue
+        if not ln[:1].isspace():
+            if cur:
+                blocks.append("\n".join(cur))
+            cur = [ln]
+        else:
+            cur.append(ln)
+    if cur:
+        blocks.append("\n".join(cur))
+    return blocks
+
+
+def categorize_cell(changes_raw, campaign_col=None, ad_group_col=None):
+    """Categorize EACH sub-change block -> list of records (multi-change cells yield several)."""
+    return [categorize(b, campaign_col, ad_group_col) for b in split_blocks(changes_raw)]

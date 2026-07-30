@@ -1,6 +1,6 @@
 """
 Quick diagnostic — check what device values exist in
-campaign_performance_geo_daily for Home Insurance.
+campaign_performance_geo_daily_search for Home Insurance.
 
 
     python analysis\google-geo-analysis\diag_geo_device_check.py
@@ -15,13 +15,13 @@ conn = sqlite3.connect(DB_PATH)
 conn.row_factory = sqlite3.Row
 
 print("=" * 65)
-print("campaign_performance_geo_daily — device value audit")
+print("campaign_performance_geo_daily_search — device value audit")
 print(f"Database: {DB_PATH}")
 print("=" * 65)
 
 # Total rows regardless of device
 total = conn.execute("""
-    SELECT COUNT(*) AS n FROM campaign_performance_geo_daily
+    SELECT COUNT(*) AS n FROM campaign_performance_geo_daily_search
     WHERE account_id = 1
 """).fetchone()
 print(f"\nTotal rows (all devices, account_id=1): {total['n']:,}")
@@ -30,7 +30,7 @@ print(f"\nTotal rows (all devices, account_id=1): {total['n']:,}")
 print("\nBreakdown by device:")
 rows = conn.execute("""
     SELECT device, COUNT(*) AS n, SUM(cost_micros)/1e6 AS spend
-    FROM campaign_performance_geo_daily
+    FROM campaign_performance_geo_daily_search
     WHERE account_id = 1
     GROUP BY device
     ORDER BY n DESC
@@ -48,7 +48,7 @@ else:
 print("\nRow counts by account_id (all accounts):")
 acct_rows = conn.execute("""
     SELECT account_id, COUNT(*) AS n
-    FROM campaign_performance_geo_daily
+    FROM campaign_performance_geo_daily_search
     GROUP BY account_id
     ORDER BY n DESC
     LIMIT 10

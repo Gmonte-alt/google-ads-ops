@@ -18,9 +18,9 @@ For Google-only accounts (medicare, auto, term_life, auto_quote):
 
 Sheets:
     1. Summary              -- headline keyword counts, spend by lifecycle,
-                               plus campaign-level totals from campaign_performance_daily
+                               plus campaign-level totals from campaign_performance_daily_search
     2. Monthly active       -- active keyword counts by match type
-    3. Campaign activity    -- per-campaign per-month spend/conv from campaign_performance_daily
+    3. Campaign activity    -- per-campaign per-month spend/conv from campaign_performance_daily_search
     4. Structure snapshot   -- aggregate counts of campaigns/ad groups/keywords by month
     5. Keyword density      -- keyword distribution per campaign and ad group
     6. Keyword lifecycle    -- each keyword classified into one of eight states
@@ -28,7 +28,7 @@ Sheets:
     8. Platform comparison  -- Google vs Microsoft side-by-side (home only)
 
 Default date range (no --months flag):
-    For --account home: all months from the earliest month in campaign_performance_daily
+    For --account home: all months from the earliest month in campaign_performance_daily_search
         through the most recent complete month with data. Since keyword_performance_daily
         only starts Dec 2025, earlier months show zero keyword-level activity (intentional).
     For all other accounts: the 3 most recent complete months with keyword performance data.
@@ -195,7 +195,7 @@ def detect_recent_months(conn, google_id: str, n: int = 3) -> list[str]:
 
 def detect_full_campaign_month_range(conn, google_id: str) -> list[str]:
     """
-    Dynamically detects all complete months available in campaign_performance_daily
+    Dynamically detects all complete months available in campaign_performance_daily_search
     for this account, from the earliest month through the most recent complete month.
 
     Used as the default date range for accounts with campaign-level data that
@@ -208,7 +208,7 @@ def detect_full_campaign_month_range(conn, google_id: str) -> list[str]:
 
     rows = conn.execute("""
         SELECT DISTINCT STRFTIME('%Y-%m', cpd.date) AS month
-        FROM campaign_performance_daily cpd
+        FROM campaign_performance_daily_search cpd
         JOIN campaigns c   ON cpd.campaign_id = c.campaign_id
         JOIN accounts a    ON c.account_id    = a.id
         WHERE a.platform_account_id = ?
@@ -413,7 +413,7 @@ def build_monthly_active(
 
 
 # ---------------------------------------------------------------------------
-# Campaign data fetch (campaign_performance_daily — data from Jan 2025)
+# Campaign data fetch (campaign_performance_daily_search — data from Jan 2025)
 # ---------------------------------------------------------------------------
 
 def fetch_campaign_monthly_activity(
@@ -423,7 +423,7 @@ def fetch_campaign_monthly_activity(
     month_labels: dict[str, str],
 ) -> pd.DataFrame:
     """
-    Returns one row per campaign per month from campaign_performance_daily.
+    Returns one row per campaign per month from campaign_performance_daily_search.
     Uses device='ALL' rows only. Joined to campaigns table for name/status.
     Months with no data for a campaign are omitted (not zero-filled) since
     campaigns may not yet have been created for earlier months.
@@ -450,7 +450,7 @@ def fetch_campaign_monthly_activity(
                 COALESCE(SUM(cpd.cost_micros), 0) / 1e6     AS spend,
                 COALESCE(SUM(cpd.conversions), 0)            AS conversions,
                 COALESCE(SUM(cpd.conversion_value), 0)       AS revenue
-            FROM campaign_performance_daily cpd
+            FROM campaign_performance_daily_search cpd
             JOIN campaigns c ON cpd.campaign_id = c.campaign_id
             JOIN accounts a  ON c.account_id    = a.id
             WHERE a.id         = ?
@@ -497,7 +497,7 @@ def build_campaign_activity(
 ) -> pd.DataFrame:
     """
     One row per campaign per month, sorted by Month then Spend descending.
-    Pulled from campaign_performance_daily via fetch_campaign_monthly_activity().
+    Pulled from campaign_performance_daily_search via fetch_campaign_monthly_activity().
     """
     if campaign_df.empty:
         return pd.DataFrame()
@@ -541,7 +541,7 @@ def build_structure_snapshot(
 ) -> pd.DataFrame:
     """
     One row per platform per month showing impression-based active/inactive counts.
-    Active = had >= 1 impression in that month (from campaign_performance_daily
+    Active = had >= 1 impression in that month (from campaign_performance_daily_search
     for campaigns, keyword_performance_daily for keywords).
     Months with no performance data show zeros.
     """
@@ -587,7 +587,7 @@ def build_structure_snapshot(
                       THEN cpd.campaign_id END)                                AS active_campaigns,
                 COUNT(DISTINCT CASE WHEN cpd.impressions = 0
                       THEN cpd.campaign_id END)                                AS inactive_campaigns
-            FROM campaign_performance_daily cpd
+            FROM campaign_performance_daily_search cpd
             JOIN campaigns c ON cpd.campaign_id = c.campaign_id
             JOIN accounts a  ON c.account_id    = a.id
             WHERE a.id = ?
@@ -1147,10 +1147,10 @@ def build_summary(
                 add(f'  {platform} clean cuts',           f'{good:,}')
             blank()
 
-    # Campaign-level totals from campaign_performance_daily
+    # Campaign-level totals from campaign_performance_daily_search
     if not campaign_df.empty:
         blank()
-        add('--- Campaign performance totals (campaign_performance_daily) ---', '')
+        add('--- Campaign performance totals (campaign_performance_daily_search) ---', '')
         add('  Window',
             f"{month_labels[months[0]]} — {month_labels[months[-1]]}")
         tot_imp   = int(campaign_df['impressions'].sum())
@@ -1169,7 +1169,7 @@ def build_summary(
             add('  Overall CPL ($)', f'${tot_spend / tot_convs:.2f}' if tot_convs > 0 else 'N/A')
         blank()
         # Per-month breakdown
-        add('  Monthly breakdown (campaign_performance_daily)', '')
+        add('  Monthly breakdown (campaign_performance_daily_search)', '')
         for month in months:
             mdf = campaign_df[campaign_df['month'] == month]
             if mdf.empty:
@@ -1307,7 +1307,7 @@ def main():
     if args.months:
         months = sorted(args.months)
     elif args.account == 'home':
-        # Dynamic: all complete months in campaign_performance_daily (Jan 2025 onward)
+        # Dynamic: all complete months in campaign_performance_daily_search (Jan 2025 onward)
         months = detect_full_campaign_month_range(conn, google_id)
         if not months:
             print("ERROR: No campaign performance data found for this account.")

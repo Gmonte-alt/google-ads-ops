@@ -35,7 +35,7 @@ Keyword lens (perf -> keyword_instances -> keyword_category_map_current):
                         / generic / aggregator_competitor / unmapped)
   3. keyword_category x device
   4. Campaign grid (campaign_id + name), sorted bleeders -> gainers
-State lens (campaign_performance_geo_daily -- SIBLING view; Google never
+State lens (campaign_performance_geo_daily_search -- SIBLING view; Google never
 crosses keyword x state, so these reconcile in total but do not join):
   5. State
   6. State x device
@@ -77,7 +77,7 @@ TOP_N_STATES = 15
 EVENT_DATES = ("bid-down 6/18", "Tier1 ease 6/25", "Tier2 6/30",
                "Tier3 consolidation 7/9 (5pm CST)")
 
-GEO_TABLE = "campaign_performance_geo_daily"   # Google geo source
+GEO_TABLE = "campaign_performance_geo_daily_search"   # Google geo source
 GEO_REV_COL = "conversion_value"   # empirically matched primary_conv_value
                                    # within 0.1% (June 2026 reconciliation)
 
@@ -437,7 +437,7 @@ def main():
             ["prev", "cur"]).fillna(0) > 0).all()
     if not geo_ok:
         b_st = b_sd = None
-        print("\n[NOTE] State lenses skipped: campaign_performance_geo_daily "
+        print("\n[NOTE] State lenses skipped: campaign_performance_geo_daily_search "
               "has no data for one/both windows (geo sync typically lags "
               "1-3 days; keyword lenses above are current).")
     if geo_ok:

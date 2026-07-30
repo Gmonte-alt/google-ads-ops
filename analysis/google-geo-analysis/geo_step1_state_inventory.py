@@ -5,7 +5,7 @@ Step 1 of the Home Insurance geo restructure analysis.
 
 Purpose:
   Build an inventory of every (campaign, geo_state) combination that appears
-  in campaign_performance_geo_daily for account_id = 1. This validates the
+  in campaign_performance_geo_daily_search for account_id = 1. This validates the
   state-to-campaign assignments before the full analysis script is built.
 
 Output (terminal only — no Excel at this stage):
@@ -14,7 +14,7 @@ Output (terminal only — no Excel at this stage):
   - Cross-tier duplicate detection and resolution via most-recent-activity rule
 
 Device convention:
-  campaign_performance_geo_daily has NO device='ALL' rollup — device values
+  campaign_performance_geo_daily_search has NO device='ALL' rollup — device values
   are MOBILE, DESKTOP, TABLET, CONNECTED_TV, OTHER. Sum across all device rows.
 
 Usage:
@@ -59,7 +59,7 @@ def fetch_inventory(conn, end_date):
             SUM(cpg.clicks)                        AS clicks,
             SUM(cpg.cost_micros) / 1e6             AS spend,
             SUM(cpg.conversions)                   AS conversions
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND cpg.geo_state IS NOT NULL
@@ -250,7 +250,7 @@ def main():
     conn.close()
 
     if not rows:
-        print(f"No rows found in campaign_performance_geo_daily for account_id={ACCOUNT_ID}.")
+        print(f"No rows found in campaign_performance_geo_daily_search for account_id={ACCOUNT_ID}.")
         return
 
     inventory = resolve_cross_tier(rows, end_date)

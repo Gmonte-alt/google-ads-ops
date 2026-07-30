@@ -7,7 +7,7 @@ actual figure from Google Ads UI is ≈ 1.15.
 
 Runs 5 separate checks and prints results to terminal:
 
-  1. Is there a device='ALL' rollup convention on campaign_performance_daily?
+  1. Is there a device='ALL' rollup convention on campaign_performance_daily_search?
      If yes, my spend sum is double-counting.
   2. Compare 4 different ways to compute 30d spend & conv for one
      campaign (Tier One) to narrow down which layer is wrong.
@@ -63,19 +63,19 @@ def connect() -> sqlite3.Connection:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# CHECK 1: device rollup convention on campaign_performance_daily?
+# CHECK 1: device rollup convention on campaign_performance_daily_search?
 # ═══════════════════════════════════════════════════════════════════
 
 def check_1_device_rollup(conn: sqlite3.Connection) -> None:
-    banner("CHECK 1 — Device values in campaign_performance_daily")
+    banner("CHECK 1 — Device values in campaign_performance_daily_search")
     print("""
-Hypothesis: if `campaign_performance_daily` stores both per-device rows
+Hypothesis: if `campaign_performance_daily_search` stores both per-device rows
 AND a rollup row (convention: device='ALL'), my SQL is summing both and
 double-counting spend. Let's see what device values exist.
 """)
     q = f"""
         SELECT device, COUNT(*) AS n_rows, SUM(cost_micros)/1e6 AS total_cost_usd
-        FROM campaign_performance_daily
+        FROM campaign_performance_daily_search
         WHERE account_id = {ACCOUNT_ID}
           AND date BETWEEN '{WINDOW_START}' AND '{WINDOW_END}'
           AND campaign_id IN ({','.join('?' * len(ENABLED_CAMPAIGN_IDS))})
@@ -98,7 +98,7 @@ double-counting spend. Let's see what device values exist.
         else:
             print("\n  Rollup and per-device differ significantly — not a pure rollup.")
     else:
-        print("\n  No 'ALL' rollup row exists in campaign_performance_daily.")
+        print("\n  No 'ALL' rollup row exists in campaign_performance_daily_search.")
         print("  This bug hypothesis is NOT the cause of the discrepancy.")
 
 
@@ -109,12 +109,12 @@ double-counting spend. Let's see what device values exist.
 def check_2_four_way_reconciliation(conn: sqlite3.Connection) -> None:
     banner(f"CHECK 2 — Four ways to compute Tier One 30d totals ({WINDOW_START} to {WINDOW_END})")
 
-    # Method A: The script's current logic — sum campaign_performance_daily
+    # Method A: The script's current logic — sum campaign_performance_daily_search
     q_a = f"""
         SELECT SUM(cost_micros)/1e6 AS cost_usd,
                SUM(conversions)     AS native_conv,
                SUM(conversion_value) AS native_value
-        FROM campaign_performance_daily
+        FROM campaign_performance_daily_search
         WHERE campaign_id = '{TIER_ONE}'
           AND account_id  = {ACCOUNT_ID}
           AND date BETWEEN '{WINDOW_START}' AND '{WINDOW_END}'
@@ -126,7 +126,7 @@ def check_2_four_way_reconciliation(conn: sqlite3.Connection) -> None:
         SELECT SUM(cost_micros)/1e6 AS cost_usd,
                SUM(conversions)     AS native_conv,
                SUM(conversion_value) AS native_value
-        FROM campaign_performance_daily
+        FROM campaign_performance_daily_search
         WHERE campaign_id = '{TIER_ONE}'
           AND account_id  = {ACCOUNT_ID}
           AND date BETWEEN '{WINDOW_START}' AND '{WINDOW_END}'
@@ -139,7 +139,7 @@ def check_2_four_way_reconciliation(conn: sqlite3.Connection) -> None:
         SELECT SUM(cost_micros)/1e6 AS cost_usd,
                SUM(conversions)     AS native_conv,
                SUM(conversion_value) AS native_value
-        FROM campaign_performance_daily
+        FROM campaign_performance_daily_search
         WHERE campaign_id = '{TIER_ONE}'
           AND account_id  = {ACCOUNT_ID}
           AND date BETWEEN '{WINDOW_START}' AND '{WINDOW_END}'
@@ -165,19 +165,19 @@ def check_2_four_way_reconciliation(conn: sqlite3.Connection) -> None:
     """
     d = pd.read_sql(q_d, conn).iloc[0]
 
-    print(f"\nMethod A — campaign_performance_daily, NO device filter (what script currently does):")
+    print(f"\nMethod A — campaign_performance_daily_search, NO device filter (what script currently does):")
     print(f"    cost_usd = ${a['cost_usd']:,.2f}    native_conv = {a['native_conv']:,.2f}    "
           f"native_value = ${a['native_value']:,.2f}")
     if a['cost_usd'] > 0:
         print(f"    native ROAS = {a['native_value']/a['cost_usd']:.4f}")
 
-    print(f"\nMethod B — campaign_performance_daily, device != 'ALL':")
+    print(f"\nMethod B — campaign_performance_daily_search, device != 'ALL':")
     print(f"    cost_usd = ${b['cost_usd']:,.2f}    native_conv = {b['native_conv']:,.2f}    "
           f"native_value = ${b['native_value']:,.2f}")
     if b['cost_usd'] > 0:
         print(f"    native ROAS = {b['native_value']/b['cost_usd']:.4f}")
 
-    print(f"\nMethod C — campaign_performance_daily, device = 'ALL' (rollup only):")
+    print(f"\nMethod C — campaign_performance_daily_search, device = 'ALL' (rollup only):")
     print(f"    cost_usd = ${c['cost_usd']:,.2f}    native_conv = {c['native_conv']:,.2f}    "
           f"native_value = ${c['native_value']:,.2f}")
     if c['cost_usd'] > 0:

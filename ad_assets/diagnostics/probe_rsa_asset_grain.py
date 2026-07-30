@@ -111,6 +111,27 @@ def main():
         print("Q7 VERDICT: API refuses click/conversion metrics at RSA asset grain "
               "-- impressions + performance_label are the whole universe.")
 
+    # ---- Q10: device segment gate check (Phase 2 Decision 1) ----
+    print("\nQ10: segments.device on ad_group_ad_asset_view (gate check):")
+    try:
+        dev_rows = gaql(ga, f"""
+            SELECT ad_group_ad.ad.id, asset.id, segments.device, metrics.impressions
+            FROM ad_group_ad_asset_view
+            WHERE ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'
+              AND ad_group_ad.status = 'ENABLED'
+              AND ad_group.status = 'ENABLED'
+              AND campaign.status = 'ENABLED'
+              AND segments.date DURING {DATE_RANGE}
+        """)
+        devices = sorted({r.segments.device.name for r in dev_rows})
+        print("    ACCEPTED -- %d rows, devices seen: %s" % (len(dev_rows), devices))
+        print("    VERDICT: device-segmented sync pass is GO; PK commits as drafted.")
+    except GoogleAdsException as e:
+        for err in e.failure.errors:
+            print("    [API] %s" % err.message)
+        print("    VERDICT: REJECTED -- device column stays 'ALL'-only, PK unchanged, "
+              "sync runs unsegmented pass only.")
+
     # ---- Q8: label landscape ----
     print("\nQ8: performance_label landscape (enabled RSA assets, %s):" % DATE_RANGE)
     label_ft = Counter()

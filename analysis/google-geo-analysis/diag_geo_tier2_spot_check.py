@@ -4,7 +4,7 @@ diag_geo_tier2_spot_check.py
 Spot check for the Google geo restructure analysis.
 
 Confirms that Colorado, Utah, and South Dakota appear in the
-Tier Two campaign in campaign_performance_geo_daily, and shows
+Tier Two campaign in campaign_performance_geo_daily_search, and shows
 their relative spend weights before the full geo analysis runs.
 
 Also shows a summary of all states across all 7 enabled Home
@@ -70,13 +70,13 @@ def main():
     print("=" * 72)
 
     # ── 1. Table health check ──────────────────────────────────────────────
-    print("\n── 1. campaign_performance_geo_daily health check ────────────────────\n")
+    print("\n── 1. campaign_performance_geo_daily_search health check ────────────────────\n")
 
     total = conn.execute("""
         SELECT COUNT(*) AS rows, MIN(date) AS min_date, MAX(date) AS max_date,
                SUM(cost_micros)/1e6 AS spend,
                COUNT(DISTINCT geo_state) AS states
-        FROM campaign_performance_geo_daily
+        FROM campaign_performance_geo_daily_search
         WHERE account_id = ?
         -- No device='ALL' rollup in geo table — sum across all devices
     """, (ACCOUNT_ID,)).fetchone()
@@ -105,7 +105,7 @@ def main():
             SUM(cpg.cost_micros) / 1e6    AS spend,
             SUM(cpg.conversions)          AS conversions,
             SUM(cpg.conversion_value)     AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND c.campaign_name LIKE '%TIER TWO%'
@@ -153,7 +153,7 @@ def main():
             SUM(cpg.clicks)             AS clicks,
             SUM(cpg.conversions)        AS conversions,
             SUM(cpg.conversion_value)   AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND c.campaign_name LIKE '%TIER TWO%'
@@ -167,7 +167,7 @@ def main():
             SUM(cpg.clicks)             AS clicks,
             SUM(cpg.conversions)        AS conversions,
             SUM(cpg.conversion_value)   AS revenue
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND c.campaign_name LIKE '%TIER TWO%'
@@ -202,7 +202,7 @@ def main():
             SUM(cpg.cost_micros) / 1e6  AS spend,
             SUM(cpg.clicks)             AS clicks,
             SUM(cpg.conversions)        AS conversions
-        FROM campaign_performance_geo_daily cpg
+        FROM campaign_performance_geo_daily_search cpg
         JOIN campaigns c ON c.campaign_id = cpg.campaign_id
         WHERE cpg.account_id = ?
           AND cpg.campaign_id IN ({ph})

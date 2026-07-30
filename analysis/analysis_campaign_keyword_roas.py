@@ -115,9 +115,9 @@ def fetch_data_coverage(conn) -> pd.DataFrame:
          "WHERE a.platform_account_id = ? AND a.platform = 'google' "
          "AND sqp.device = 'ALL'"),
 
-        ("campaign_performance_daily",
+        ("campaign_performance_daily_search",
          "SELECT MIN(date), MAX(date), COUNT(*) "
-         "FROM campaign_performance_daily cpd "
+         "FROM campaign_performance_daily_search cpd "
          "JOIN campaigns c ON cpd.campaign_id = c.campaign_id "
          "WHERE cpd.account_id = ? AND cpd.device IN ('MOBILE','DESKTOP','TABLET')"),
 
@@ -140,7 +140,7 @@ def fetch_data_coverage(conn) -> pd.DataFrame:
     rows = []
     for table_name, sql in tables:
         # campaign tables use internal integer id; kw/sq tables use string id
-        param = internal_id if table_name in ('campaign_performance_daily',
+        param = internal_id if table_name in ('campaign_performance_daily_search',
                                                'campaigns', 'ad_groups') \
                 else GOOGLE_ACCOUNT_ID
         try:
@@ -178,15 +178,15 @@ def fetch_data_coverage(conn) -> pd.DataFrame:
 
 def fetch_campaign_summary(conn, end_date: date, days: int) -> pd.DataFrame:
     """
-    Campaign summary. Attempts campaign_performance_daily first (has IS data).
+    Campaign summary. Attempts campaign_performance_daily_search first (has IS data).
     Falls back to keyword_performance_daily aggregated by campaign_name when
-    campaign_performance_daily is empty (before campaign sync scripts are run).
+    campaign_performance_daily_search is empty (before campaign sync scripts are run).
     """
     start_date = end_date - timedelta(days=days - 1)
 
-    # Check if campaign_performance_daily has data
+    # Check if campaign_performance_daily_search has data
     cpd_count = conn.execute(
-        "SELECT COUNT(*) FROM campaign_performance_daily"
+        "SELECT COUNT(*) FROM campaign_performance_daily_search"
     ).fetchone()[0]
 
     if cpd_count > 0:
@@ -215,7 +215,7 @@ def fetch_campaign_summary(conn, end_date: date, days: int) -> pd.DataFrame:
                 AVG(cpd.search_impression_share)               AS avg_impression_share,
                 AVG(cpd.search_budget_lost_is)                 AS avg_budget_lost_is,
                 AVG(cpd.search_rank_lost_is)                   AS avg_rank_lost_is
-            FROM campaign_performance_daily cpd
+            FROM campaign_performance_daily_search cpd
             LEFT JOIN campaigns c ON cpd.campaign_id = c.campaign_id
             -- Get campaign_name from keyword_instances since campaigns table may be empty
             LEFT JOIN (
@@ -232,7 +232,7 @@ def fetch_campaign_summary(conn, end_date: date, days: int) -> pd.DataFrame:
     else:
         # Fallback: aggregate keyword_performance_daily by campaign
         # No IS data available, but all revenue/spend/clicks data is here
-        print(f"  NOTE: campaign_performance_daily is empty. "
+        print(f"  NOTE: campaign_performance_daily_search is empty. "
               f"Run campaign_db_scripts/03_sync_campaign_performance.py for IS data.")
         return pd.read_sql_query("""
             SELECT

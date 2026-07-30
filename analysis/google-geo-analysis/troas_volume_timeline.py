@@ -3,7 +3,7 @@ troas_volume_timeline.py — visualize the downward pressure tROAS changes put o
 
 For each current campaign, plots weekly clicks/day and conversions/day across the period with
 the reconstructed tROAS target level overlaid (step line) and vertical markers at each tROAS
-change, so you can see volume bend after the bidder is tightened. Source: campaign_performance_geo_daily
+change, so you can see volume bend after the bidder is tightened. Source: campaign_performance_geo_daily_search
 (account 1, native conv, sum device rows) for volume; the Google Ads change-history CSV for tROAS events.
 
 Usage:
@@ -18,7 +18,7 @@ import numpy as np, pandas as pd
 DEFAULT_DB = r"C:\Projects\google-ads-ops\db\paid_search.db"
 DEFAULT_OUT = r"C:\Projects\google-ads-ops\analysis\google-geo-analysis\output"
 ACCOUNT_ID = 1
-GEO = "campaign_performance_geo_daily"
+GEO = "campaign_performance_geo_daily_search"
 CURRENT_CAMPAIGNS = ["Tier One", "Tier Two", "Tier Three", "Tier Four", "California", "Texas", "Florida"]
 # Campaign-level logs as "...from 115% to 112%"; portfolio-level logs as "...from 1.19 to 1.2"
 # (decimal ratio, strategy name in quotes). Match both; %? is optional.

@@ -333,6 +333,7 @@ def fetch_device_performance(ga_service, customer_id, start_date, end_date, camp
         SELECT
             ad_group_criterion.criterion_id,
             ad_group.id,
+            campaign.id,
             segments.date,
             segments.device,
             segments.ad_network_type,
@@ -356,6 +357,7 @@ def fetch_device_performance(ga_service, customer_id, start_date, end_date, camp
                 results.append({
                     "criterion_id": str(row.ad_group_criterion.criterion_id),
                     "ad_group_id":  str(row.ad_group.id),
+                    "campaign_id":  str(row.campaign.id),
                     "report_date":  row.segments.date,
                     "device":       row.segments.device.name,
                     "clicks":       row.metrics.clicks,
@@ -379,6 +381,7 @@ def fetch_device_conversions(ga_service, customer_id, start_date, end_date, camp
         SELECT
             ad_group_criterion.criterion_id,
             ad_group.id,
+            campaign.id,
             segments.date,
             segments.device,
             segments.ad_network_type,
@@ -402,6 +405,7 @@ def fetch_device_conversions(ga_service, customer_id, start_date, end_date, camp
                 results.append({
                     "criterion_id":               str(row.ad_group_criterion.criterion_id),
                     "ad_group_id":                str(row.ad_group.id),
+                    "campaign_id":                str(row.campaign.id),
                     "report_date":                row.segments.date,
                     "device":                     row.segments.device.name,
                     "conversion_action_resource": row.segments.conversion_action,
@@ -547,7 +551,7 @@ def upsert_device_performance(conn, account_id, traffic_rows, conv_rows,
     aggregated = {}
 
     def _blank():
-        return {"clicks": 0, "impressions": 0, "cost_micros": 0.0,
+        return {"campaign_id": None, "clicks": 0, "impressions": 0, "cost_micros": 0.0,
                 "primary_conv_count": 0.0, "primary_conv_value": 0.0,
                 "secondary_conv_count": 0.0, "all_conv_count": 0.0, "all_conv_value": 0.0}
 
@@ -558,6 +562,7 @@ def upsert_device_performance(conn, account_id, traffic_rows, conv_rows,
             continue
         key = (row["criterion_id"], row["ad_group_id"], row["report_date"], device)
         agg = aggregated.setdefault(key, _blank())
+        agg["campaign_id"] = row.get("campaign_id") or agg["campaign_id"]
         agg["clicks"]      += row["clicks"]
         agg["impressions"] += row["impressions"]
         agg["cost_micros"] += row["cost_micros"]
@@ -569,6 +574,7 @@ def upsert_device_performance(conn, account_id, traffic_rows, conv_rows,
             continue
         key = (row["criterion_id"], row["ad_group_id"], row["report_date"], device)
         agg = aggregated.setdefault(key, _blank())
+        agg["campaign_id"] = row.get("campaign_id") or agg["campaign_id"]
         action_name = extract_conversion_action_name(
             row["conversion_action_resource"], action_name_cache, ga_service, customer_id)
         mode = conv_action_map.get(action_name.lower(), "monitor")
@@ -594,13 +600,13 @@ def upsert_device_performance(conn, account_id, traffic_rows, conv_rows,
         cursor.execute(
             """
             INSERT OR REPLACE INTO keyword_performance_daily
-                (instance_id, report_date, device, geo_state, geo_target_constant_id,
+                (instance_id, campaign_id, report_date, device, geo_state, geo_target_constant_id,
                  clicks, impressions, cost_micros,
                  primary_conv_count, primary_conv_value,
                  secondary_conv_count, all_conv_count, all_conv_value)
-            VALUES (?, ?, ?, 'ALL', NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, 'ALL', NULL, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (instance_id, report_date, device,
+            (instance_id, metrics["campaign_id"], report_date, device,
              metrics["clicks"], metrics["impressions"], metrics["cost_micros"],
              metrics["primary_conv_count"], metrics["primary_conv_value"],
              metrics["secondary_conv_count"],

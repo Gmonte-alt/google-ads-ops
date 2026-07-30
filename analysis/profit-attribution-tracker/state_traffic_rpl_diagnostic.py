@@ -7,7 +7,7 @@ explain -- and how much is the tROAS / tier mechanism?
 
 V3.1 (architect correction 2026-07-14): geo_performance_daily is the
 MICROSOFT geo table (account 2 only). Google's geo source is
-campaign_performance_geo_daily -- account 1, 2025-01-01 -> current. This
+campaign_performance_geo_daily_search -- account 1, 2025-01-01 -> current. This
 table has no that-day bidding columns (Microsoft-only), so epochs stay
 date-based; tROAS(obs) simply won't print. Original v3 notes: runs on the
 Google geo table, which
@@ -69,7 +69,7 @@ CONSOL_DATE = dt.date(2026, 7, 8)
 RECON_TOLERANCE = 0.10
 REV_CHECK_START, REV_CHECK_END = "2026-06-01", "2026-06-30"
 
-GEO_TABLE = "campaign_performance_geo_daily"   # Google geo source (account 1); geo_performance_daily is Microsoft-only
+GEO_TABLE = "campaign_performance_geo_daily_search"   # Google geo source (account 1); geo_performance_daily is Microsoft-only
 G = {
     "account_id": "account_id",
     "campaign_id": "campaign_id",

@@ -171,7 +171,7 @@ def resolve_end_date(conn: sqlite3.Connection, override: str | None) -> tuple[da
     If --end-date is provided, uses it directly as stable_end_date.
     """
     row = conn.execute(
-        "SELECT MAX(date) AS max_date FROM campaign_performance_daily WHERE account_id = ?",
+        "SELECT MAX(date) AS max_date FROM campaign_performance_daily_search WHERE account_id = ?",
         (ACCOUNT_ID,),
     ).fetchone()
     raw_max = date.fromisoformat(row["max_date"])
@@ -427,16 +427,16 @@ def query_campaign_daily(
 ) -> pd.DataFrame:
     """
     Returns daily rollup across devices for each campaign in the window.
-    Uses campaign_performance_daily (native Google conversions) plus joins to
+    Uses campaign_performance_daily_search (native Google conversions) plus joins to
     keyword_performance_daily for primary_conv_count/value which are the
     offline-routed metrics the team uses.
 
-    Note: campaign_performance_daily has `conversions` (Google native) — but
+    Note: campaign_performance_daily_search has `conversions` (Google native) — but
     the analyst uses primary_conv_count/value from keyword_performance_daily
     as the offline-routed source of truth. We aggregate keyword_performance_daily
     to the campaign × date grain.
 
-    IMPORTANT: campaign_performance_daily uses the same convention as
+    IMPORTANT: campaign_performance_daily_search uses the same convention as
     keyword_performance_daily — rows exist per device (DESKTOP, MOBILE,
     TABLET) AND a rollup row with device='ALL'. Filter to device='ALL'
     only or spend/conversions will be double-counted.
@@ -456,7 +456,7 @@ def query_campaign_daily(
             MAX(target_roas_that_day)             AS target_roas_that_day,
             MAX(bidding_strategy_type_that_day)   AS bid_strategy_that_day,
             MAX(budget_micros_that_day) / 1e6     AS budget_that_day_usd
-        FROM campaign_performance_daily
+        FROM campaign_performance_daily_search
         WHERE campaign_id IN ({placeholders})
           AND date BETWEEN ? AND ?
           AND account_id = ?
@@ -684,7 +684,7 @@ def run_smoke_tests(
     placeholders = ",".join("?" * len(ENABLED_CAMPAIGN_IDS))
     sql = f"""
         SELECT campaign_id, COUNT(*) AS null_days
-        FROM campaign_performance_daily
+        FROM campaign_performance_daily_search
         WHERE campaign_id IN ({placeholders})
           AND date BETWEEN ? AND ?
           AND account_id = ?

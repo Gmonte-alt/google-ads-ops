@@ -83,9 +83,9 @@ CONFIG = {
     "kid_intentaction_col": "intent_action",
     "kid_modbrand_col":     "modifier_brand",
 
-    # campaign_performance_daily (recon only) -- CONFIRMED: date col is `date`,
+    # campaign_performance_daily_search (recon only) -- CONFIRMED: date col is `date`,
     # has account_id directly.
-    "cpd_table":            "campaign_performance_daily",
+    "cpd_table":            "campaign_performance_daily_search",
     "cpd_date_col":         "date",
     "cpd_device_col":       "device",
     "cpd_cost_col":         "cost_micros",
@@ -123,7 +123,7 @@ FADED_MIN_2025_SPEND = 500.0
 
 INSPECT_TABLES = [
     "keyword_identities", "keyword_instances", "keyword_performance_daily",
-    "campaign_performance_daily", "campaigns", "ad_groups", "accounts",
+    "campaign_performance_daily_search", "campaigns", "ad_groups", "accounts",
 ]
 
 
@@ -256,7 +256,7 @@ def identity_joined_spend_sql(c):
 
 
 def cpd_total_spend_sql(c):
-    """campaign_performance_daily spend for the same scope/window.
+    """campaign_performance_daily_search spend for the same scope/window.
     cpd carries account_id directly; no campaigns join needed."""
     return f"""
         SELECT SUM(cpd.{c['cpd_cost_col']}) / 1000000.0

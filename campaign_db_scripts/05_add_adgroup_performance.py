@@ -159,9 +159,10 @@ CONV_QUERY = """
     SELECT
         ad_group.id,
         segments.date,
+        segments.device,
         segments.conversion_action,
-        metrics.all_conversions_by_conversion_date,
-        metrics.all_conversions_value_by_conversion_date
+        metrics.all_conversions,
+        metrics.all_conversions_value
     FROM ad_group
     WHERE segments.date BETWEEN '{start}' AND '{end}'
       AND ad_group.status != 'REMOVED'
@@ -388,9 +389,10 @@ def sync_adgroup_daily(client, ga_service, conn, account: dict,
         for row in ga_service.search(request=request2):
             ag_id   = str(row.ad_group.id)
             date_   = row.segments.date
+            device  = row.segments.device.name   # BUGFIX 2026-08-12: per-device
             action_resource = row.segments.conversion_action
-            count = row.metrics.all_conversions_by_conversion_date
-            value = row.metrics.all_conversions_value_by_conversion_date
+            count = row.metrics.all_conversions          # click-date, matches kpd
+            value = row.metrics.all_conversions_value
 
             # Resolve resource string → human-readable name → conv_map lookup
             action_name = extract_conversion_action_name(
@@ -398,15 +400,16 @@ def sync_adgroup_daily(client, ga_service, conn, account: dict,
             )
             mode = conv_map.get(action_name.lower(), 'monitor')
 
-            # Route based on include_mode
-            for device in ['MOBILE', 'DESKTOP', 'TABLET', 'CONNECTED_TV', 'OTHER']:
-                key = (ag_id, date_, device)
-                if key not in rows_dict:
-                    continue
-                if mode == 'primary':
-                    rows_dict[key]["primary_conv_count"] += count
-                    rows_dict[key]["primary_conv_value"] += value
-                # secondary_count, monitor, excluded: don't add to primary
+            # Route based on include_mode -- onto the row's OWN device key only.
+            # (Previous version fanned the full unsegmented count onto every
+            #  device row, then the ALL rollup summed them: ~3x inflation.)
+            key = (ag_id, date_, device)
+            if key not in rows_dict:
+                continue
+            if mode == 'primary':
+                rows_dict[key]["primary_conv_count"] += count
+                rows_dict[key]["primary_conv_value"] += value
+            # secondary_count, monitor, excluded: don't add to primary
 
     # ── Build ALL rollup rows ─────────────────────────────────────────
     from collections import defaultdict

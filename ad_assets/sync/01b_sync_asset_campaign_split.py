@@ -6,8 +6,13 @@ campaign attribution (Q11 probe: GO, full fidelity).
 
 Two passes, same window, same transaction (Phase-1 pattern):
   (click_type='ALL')  no click_type segment -- authoritative impressions
-  (click_type=X)      segments.click_type   -- the partition; 'SITELINKS'
-                      rows are the DIRECT clicks/value/cost
+  (click_type=X)      segments.click_type   -- the partition BY CLICK KIND.
+                      'SITELINKS' rows = sitelink-KIND clicks during this
+                      asset's impressions, INCLUDING co-served neighbors'
+                      clicks (~1.5x). NOT per-asset direct credit -- that is
+                      click_type='THIS_ASSET' rows, written by
+                      01c_sync_this_asset.py (interaction segment, matches
+                      the UI's 'This extension'). Corrected 2026-09-03.
 
 Assertion A7 [WARN]: per (asset, date), campaign-attributed 'ALL' clicks
 summed across campaigns ~= the customer-level row in asset_performance_daily

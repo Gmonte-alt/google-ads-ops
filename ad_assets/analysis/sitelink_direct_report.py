@@ -60,6 +60,8 @@ WORD_NUM = {"ONE": "1", "TWO": "2", "THREE": "3", "FOUR": "4", "FIVE": "5",
 
 def short_label(name):
     n = (name or "").upper()
+    if "PMAX" in n:
+        return "PMax"
     for token, lbl in (("CALIFORNIA", "CA"), ("TEXAS", "TX"), ("FLORIDA", "FL")):
         if token in n:
             return lbl
@@ -119,18 +121,29 @@ def has_table(conn, name):
                         (name,)).fetchone() is not None
 
 
+def direct_ct(conn, date_from, date_to):
+    """Direct-click source: THIS_ASSET rows (true per-asset interaction, gate
+    2026-09-03) when the window has them; SITELINKS fallback pre-backfill."""
+    has = conn.execute(
+        """SELECT 1 FROM asset_performance_daily WHERE account_id=?
+           AND click_type='THIS_ASSET' AND report_date BETWEEN ? AND ? LIMIT 1""",
+        (ACCOUNT_ID, date_from, date_to)).fetchone()
+    return "THIS_ASSET" if has else "SITELINKS"
+
+
 def pull(conn, perf, date_from, date_to):
     """Returns per-(asset, level, campaign-or-None) raw metrics + campaign impr.
     campaign=None rows are account-wide (link grain). When the campaign-split
     table exists, CUSTOMER-level assets also get per-campaign rows from it."""
+    ct = direct_ct(conn, date_from, date_to)
     rows = conn.execute(
-        """SELECT p.asset_id, p.association_level,
+        f"""SELECT p.asset_id, p.association_level,
                   CASE WHEN p.association_level='CAMPAIGN' THEN p.association_id END,
                   SUM(CASE WHEN p.click_type='ALL' THEN p.impressions ELSE 0 END),
-                  SUM(CASE WHEN p.click_type='SITELINKS' THEN p.clicks ELSE 0 END),
-                  SUM(CASE WHEN p.click_type='SITELINKS' THEN p.conversions ELSE 0 END),
-                  SUM(CASE WHEN p.click_type='SITELINKS' THEN p.conversions_value ELSE 0 END),
-                  SUM(CASE WHEN p.click_type='SITELINKS' THEN p.cost_micros ELSE 0 END) / 1e6
+                  SUM(CASE WHEN p.click_type='{ct}' THEN p.clicks ELSE 0 END),
+                  SUM(CASE WHEN p.click_type='{ct}' THEN p.conversions ELSE 0 END),
+                  SUM(CASE WHEN p.click_type='{ct}' THEN p.conversions_value ELSE 0 END),
+                  SUM(CASE WHEN p.click_type='{ct}' THEN p.cost_micros ELSE 0 END) / 1e6
            FROM asset_performance_daily p
            JOIN asset_sitelink_data s
              ON s.account_id = p.account_id AND s.asset_id = p.asset_id
@@ -140,12 +153,12 @@ def pull(conn, perf, date_from, date_to):
         (ACCOUNT_ID, date_from, date_to)).fetchall()
     if has_table(conn, "asset_campaign_performance_daily"):
         rows = list(rows) + conn.execute(
-            """SELECT p.asset_id, 'CUSTOMER', p.campaign_id,
+            f"""SELECT p.asset_id, 'CUSTOMER', p.campaign_id,
                       SUM(CASE WHEN p.click_type='ALL' THEN p.impressions ELSE 0 END),
-                      SUM(CASE WHEN p.click_type='SITELINKS' THEN p.clicks ELSE 0 END),
-                      SUM(CASE WHEN p.click_type='SITELINKS' THEN p.conversions ELSE 0 END),
-                      SUM(CASE WHEN p.click_type='SITELINKS' THEN p.conversions_value ELSE 0 END),
-                      SUM(CASE WHEN p.click_type='SITELINKS' THEN p.cost_micros ELSE 0 END) / 1e6
+                      SUM(CASE WHEN p.click_type='{ct}' THEN p.clicks ELSE 0 END),
+                      SUM(CASE WHEN p.click_type='{ct}' THEN p.conversions ELSE 0 END),
+                      SUM(CASE WHEN p.click_type='{ct}' THEN p.conversions_value ELSE 0 END),
+                      SUM(CASE WHEN p.click_type='{ct}' THEN p.cost_micros ELSE 0 END) / 1e6
                FROM asset_campaign_performance_daily p
                JOIN asset_sitelink_data s
                  ON s.account_id = p.account_id AND s.asset_id = p.asset_id
@@ -203,10 +216,15 @@ def main():
     order = sorted(ytd_tot, key=lambda k: -ytd_tot[k])
     code = {k: "S%d" % (i + 1) for i, k in enumerate(order)}
 
-    # campaign columns: campaigns present in the campaign table YTD, labeled
+    # campaign columns: default = campaigns ACTIVE NOW (impressions in the
+    # last-30-days window) so paused legacy campaigns can't become columns;
+    # --campaigns overrides with an explicit id list (checked against YTD so
+    # an explicitly requested campaign always gets its column).
     ytd_camps = data["YTD"][1]
+    active_camps = data["Last 30 days"][1]
     allowed = ({int(x) for x in args.campaigns.split(",")} if args.campaigns else None)
-    camps = sorted((c for c in ytd_camps if ytd_camps[c] > 0
+    pool = ytd_camps if allowed is not None else active_camps
+    camps = sorted((c for c in pool if pool.get(c, 0) > 0
                     and (allowed is None or c in allowed)),
                    key=lambda c: ({"CA": 0, "TX": 1, "FL": 2}.get(
                        short_label(camp_names.get(c, "")), 9),
@@ -230,7 +248,14 @@ def main():
             "ROAS = direct conversion value \u00f7 direct cost  |  "
             "Conversion rate % = direct conversions \u00f7 direct clicks  |  "
             "Value per click ($) = direct conversion value \u00f7 direct clicks  |  "
-            "'Direct' = clicks on the sitelink itself (click_type = SITELINKS)")
+            "'Direct' = clicks ON THIS sitelink specifically (per-asset interaction "
+            "segment = the UI's 'This extension'; reconciles with the UI to the "
+            "click). Pre-backfill windows fall back to sitelink-type presence "
+            "clicks (~1.5x)  |  "
+            "Total = the sitelink's ACCOUNT-WIDE serving (all campaigns) | "
+            "'All other active/paused' = campaigns not shown as columns, split by "
+            "whether they served in the last 30 days; shown cells + residuals ~= Total "
+            "(small gap = Google's attribution shading)")
     HEADER_ROW = 5
     for tab in tabs:
         rows, camp_impr = data[tab]
@@ -247,7 +272,25 @@ def main():
             cell[3] += val or 0.0
             cell[4] += cost or 0.0
 
-        headers = ["Sitelink", "Link text", "Asset Lvl.", "Metric"] + labels + ["Total"]
+        # residual columns: activity split of NON-displayed campaigns; each
+        # appears only when it has data in this tab's window
+        displayed_ids = set(camps)
+        active_ids = {c for c, v in data["Last 30 days"][1].items() if v > 0}
+        resid = {"All other active": {}, "All other paused": {}}
+        resid_members = {"All other active": set(), "All other paused": set()}
+        for k2, cells2 in agg.items():
+            for camp2, vals2 in cells2.items():
+                if camp2 is None or camp2 in displayed_ids:
+                    continue
+                rl = "All other active" if camp2 in active_ids else "All other paused"
+                acc = resid[rl].setdefault(k2, [0, 0, 0.0, 0.0, 0.0])
+                for i2 in range(5):
+                    acc[i2] += vals2[i2]
+                resid_members[rl].add(camp2)
+        resid_show = [rl for rl in ("All other active", "All other paused")
+                      if any(v[0] > 0 or v[1] > 0 for v in resid[rl].values())]
+        tab_labels = labels + resid_show
+        headers = ["Sitelink", "Link text", "Asset Lvl.", "Metric"] + tab_labels + ["Total"]
         last_col = get_column_letter(len(headers))
         t = ws.cell(row=1, column=1,
                     value="Sitelink Direct Contribution Report \u2014 %s" % tab)
@@ -305,14 +348,19 @@ def main():
                 for v in cells.values():
                     for i in range(5):
                         tot[i] += v[i]
-            for camp_key, vals in list(per_c.items()) + [("TOTAL", tot)]:
-                lbl = "TOTAL" if camp_key == "TOTAL" else short_label(
-                    camp_names.get(camp_key, str(camp_key)))
+            entries = [(short_label(camp_names.get(ck, str(ck))), vals,
+                        camp_impr.get(ck, 0)) for ck, vals in per_c.items()]
+            for rl in resid_show:
+                if k in resid[rl] and (resid[rl][k][0] > 0 or resid[rl][k][1] > 0):
+                    entries.append((rl, resid[rl][k],
+                                    sum(camp_impr.get(c, 0) for c in resid_members[rl])))
+            entries.append(("TOTAL", tot,
+                            sum(camp_impr.values())))  # account-wide denominator,
+                            # matching the Total numerator's account-wide scope
+            for lbl, vals, ci in entries:
                 ws.cell(row=r, column=1, value=code[k]).font = Font(name="Arial", size=9)
                 ws.cell(row=r, column=2, value=LEVEL_LABEL.get(lvl, lvl)).font = Font(name="Arial", size=9)
                 ws.cell(row=r, column=3, value=lbl).font = Font(name="Arial", size=9)
-                ci = (camp_impr.get(camp_key, 0) if camp_key != "TOTAL"
-                      else sum(camp_impr.get(c, 0) for c in camps))
                 for j, v in enumerate([vals[0], vals[1], round(vals[2], 2),
                                        round(vals[3], 2), round(vals[4], 2), ci], 4):
                     ws.cell(row=r, column=j, value=v).font = Font(name="Arial", size=9)
@@ -329,7 +377,7 @@ def main():
                     ws.cell(row=r, column=2, value=link_text.get(a, "(asset %d)" % a))
                     ws.cell(row=r, column=3, value=LEVEL_LABEL.get(lvl, lvl))
                 ws.cell(row=r, column=4, value=metric)
-                for j, lbl in enumerate(labels + ["Total"], 5):
+                for j, lbl in enumerate(tab_labels + ["Total"], 5):
                     rr = raw_addr.get((k, lbl if lbl != "Total" else "TOTAL"))
                     if rr is None:
                         continue

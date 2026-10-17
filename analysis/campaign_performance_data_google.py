@@ -83,6 +83,8 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.drawing.line import LineProperties
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -584,7 +586,7 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
                           start_date: date, end_date: date,
                           max_data_date: date, last_complete_sun: date,
                           daily_first_row: int, daily_last_row: int,
-                          label: str):
+                          label: str, full_week_total: bool = False):
     """Write a DOW_<code> sheet with thirteen stacked grids in three
     thematic blocks:
 
@@ -626,7 +628,14 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
     Each grid gets a line chart per device section, anchored two
     columns right of that section's Total column, plotting the
     section's weekly Total across all weeks with value-only data
-    labels positioned above the line.
+    labels positioned above the line, plus a dashed grey reference
+    line at the average of the plotted weeks (fed by a hidden helper
+    column right of each Total column).
+
+    MATCHED-DAY TOTALS. The 'Total' column covers Mon..(weekday of the
+    latest data date) for every week — full Mon-Sun when the latest
+    week is complete — so the current partial week reads like-for-like
+    against history in both the grids and the charts.
 
     DEVICE SECTIONS. Every grid repeats three times side by side on the
     same rows: Total (device='ALL', columns A..I — unchanged layout),
@@ -655,8 +664,11 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
         f"CvR), Outcome (ROAS, RPL, GP, Margin). Use the 'Jump to:' "
         f"links below to navigate. Each row is one ISO week (Mon-Sun). "
         f"Scan a column to compare a single weekday across weeks. The "
-        f"rightmost 'Total' column is the week sum (or weighted ratio "
-        f"for CPC/CPL/CTR/CvR/ROAS/RPL/Margin). 'avg/weighted' row "
+        f"rightmost 'Total' column is MATCHED-DAY: every week sums (or "
+        f"weight-averages, for ratios) Mon through the latest data "
+        f"weekday, so the current partial week compares like-for-like "
+        f"against prior weeks; when the latest week is complete this is "
+        f"the full Mon-Sun week. 'avg/weighted' row "
         f"aggregates across all weeks for a single weekday — weighted "
         f"for ratios. 'WoW %' row beneath compares the two most recent "
         f"complete weeks; blank when the window has fewer than two "
@@ -665,7 +677,8 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
         f"Mobile (col V), and Non-Mobile (col AQ, computed as Total "
         f"minus Mobile so the three always reconcile). A trend chart of "
         f"each section's weekly Total column follows that section's "
-        f"data range.")).font = note_font
+        f"data range; the dashed grey line is the average of the "
+        f"plotted weeks.")).font = note_font
 
     # Build list of week-starting Mondays covered by the window.
     week_mondays = []
@@ -674,6 +687,24 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
         week_mondays.append(cur_mon)
         cur_mon += timedelta(days=7)
     WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    # ── Matched-day Total ──────────────────────────────────────────────
+    # The 'Total' column sums Mon..(latest data weekday) for EVERY week,
+    # not Mon..Sun. When data runs through, say, Wednesday, all weeks
+    # total Mon–Wed, so the current partial week is directly comparable
+    # to prior weeks (and to the average line on the trend charts). When
+    # the latest week is complete the offset is 6 and totals are full
+    # weeks, exactly as before.
+    # full_week_total=True (--full-week-total on the CLI) overrides this
+    # and forces the full Mon-Sun (+6) range regardless of partial data;
+    # the current partial week's Total then simply covers whatever days
+    # exist so far.
+    if full_week_total:
+        matched_offset = 6
+    else:
+        matched_offset = min(6, (max_data_date - week_mondays[-1]).days)
+    total_header = ("Total" if matched_offset == 6
+                    else f"Total (Mon–{WEEKDAY_NAMES[matched_offset]})")
 
     # SUMIFS range references on the Daily sheet
     date_range = (f"'{daily_sheet_name}'!$A${daily_first_row}:"
@@ -716,7 +747,7 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
 
         # Header row: week_start | Mon..Sun | Total
         header_row = start_row + 1
-        headers_row = ["week_start"] + WEEKDAY_NAMES + ["Total"]
+        headers_row = ["week_start"] + WEEKDAY_NAMES + [total_header]
         for offset, h in enumerate(headers_row):
             cell = ws.cell(row=header_row, column=start_col + offset, value=h)
             cell.fill = header_fill
@@ -753,11 +784,13 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
                 if is_current_week:
                     cell.fill = current_fill
 
-            # Total column: same SUMIFS predicate but over the full
-            # Mon..Sun week range. For ratios this is the weighted week
-            # ratio (sum of numerator / sum of denominator).
+            # Total column: same SUMIFS predicate over the MATCHED day
+            # range Mon..+matched_offset (see matched-day note above),
+            # so every week's Total covers the same weekdays as the
+            # latest partial week. For ratios this is the weighted
+            # matched-day ratio.
             week_start_ref = f"${wk_letter}{r}"
-            week_end_ref = f"${wk_letter}{r}+6"
+            week_end_ref = f"${wk_letter}{r}+{matched_offset}"
             if grid_kind == "sum":
                 total_formula = (
                     f"=SUMIFS({col_range(sum_col)},"
@@ -816,18 +849,21 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
             cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
                                  left=THIN_BORDER, right=THIN_BORDER)
 
-        # Grand total cell (totals row × Total column): for sums, this is
-        # AVERAGE of the per-day weekday averages — i.e., the average
-        # weekly total. For ratios, weighted across the entire window.
+        # Grand total cell (totals row × Total column), consistent with
+        # the matched-day Total column above: for sums, the AVERAGE of
+        # the per-week matched-day totals; for ratios, weighted across
+        # the window restricted to the matched weekdays (WEEKDAY(,2)
+        # returns Mon=1..Sun=7).
+        tot_letter = get_column_letter(total_col_idx)
+        tot_first = header_row + 1
+        tot_last = header_row + len(week_mondays)
+        tot_cells = f"{tot_letter}{tot_first}:{tot_letter}{tot_last}"
         if grid_kind == "sum":
-            # Sum across the whole window divided by number of weeks =
-            # the average weekly total. Use the whole Daily-sheet column.
-            grand_formula = (
-                f"=IFERROR(SUM({col_range(sum_col)})/{len(week_mondays)},\"\")"
-            )
+            grand_formula = f"=IFERROR(AVERAGE({tot_cells}),\"\")"
         else:
-            num_all = f"SUM({col_range(num_col)})"
-            den_all = f"SUM({col_range(den_col)})"
+            wk_cond = (f"(WEEKDAY({date_range},2)<={matched_offset + 1})")
+            num_all = f"SUMPRODUCT({wk_cond}*{col_range(num_col)})"
+            den_all = f"SUMPRODUCT({wk_cond}*{col_range(den_col)})"
             grand_formula = f"=IFERROR({num_all}/{den_all},\"\")"
         cell = ws.cell(row=totals_row, column=total_col_idx,
                        value=grand_formula)
@@ -1040,7 +1076,22 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
 
         for sec_name, sec_start_col, _sec_cols in sections:
             total_col_idx = sec_start_col + 8
+            avg_col_idx = sec_start_col + 9          # hidden helper column
             anchor_col = get_column_letter(sec_start_col + 10)
+            tot_letter = get_column_letter(total_col_idx)
+
+            # Helper column: the average of this grid's plotted weekly
+            # Totals, repeated for every week row so it draws as a flat
+            # reference line across the chart. AVERAGE ignores the ""
+            # strings that ratio Totals produce on zero denominators.
+            # The column is hidden (see below); charts still read it
+            # because visible_cells_only=False.
+            avg_ref = (f"=IFERROR(AVERAGE(${tot_letter}${first_data_row}:"
+                       f"${tot_letter}${last_data_row}),\"\")")
+            ws.cell(row=grid_header_row, column=avg_col_idx, value="Average")
+            for rr in range(first_data_row, last_data_row + 1):
+                c = ws.cell(row=rr, column=avg_col_idx, value=avg_ref)
+                c.number_format = fmt
 
             chart = LineChart()
             if sec_name == "Total":
@@ -1058,9 +1109,12 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
             # the axes on generated line charts.
             chart.y_axis.delete = False
             chart.x_axis.delete = False
+            # The Average series lives in a hidden helper column — keep
+            # plotting it.
+            chart.visible_cells_only = False
 
-            # Data: this section's Total column for the grid's week rows.
-            # Include the header cell so the series is named "Total".
+            # Series 1 — this section's weekly Total. Include the header
+            # cell so the series is named after the Total column.
             data_ref = Reference(ws, min_col=total_col_idx,
                                  max_col=total_col_idx,
                                  min_row=grid_header_row,
@@ -1084,7 +1138,27 @@ def write_dow_grid_sheet(ws, daily_sheet_name: str,
             series.dLbls.position = "t"          # labels ABOVE the trend line
             series.dLbls.numFmt = fmt
 
+            # Series 2 — flat Average reference line (dashed grey, no
+            # markers, no data labels) on the same axis, so daily
+            # movement reads against the observed-window average.
+            avg_data = Reference(ws, min_col=avg_col_idx,
+                                 max_col=avg_col_idx,
+                                 min_row=grid_header_row,
+                                 max_row=last_data_row)
+            chart.add_data(avg_data, titles_from_data=True)
+            avg_series = chart.series[1]
+            avg_series.smooth = False
+            avg_series.graphicalProperties = GraphicalProperties(
+                ln=LineProperties(solidFill="808080", w=15875,
+                                  prstDash="dash"))
+
             ws.add_chart(chart, f"{anchor_col}{label_row}")
+
+    # Hide the Average helper columns (one per section, immediately
+    # right of each Total column). visible_cells_only=False above keeps
+    # the reference line plotting from hidden cells.
+    for _, sec_start_col, _ in sections:
+        ws.column_dimensions[get_column_letter(sec_start_col + 9)].hidden = True
 
     # Column widths — repeat the width pattern (week_start=14, days=11,
     # Total=13) for each device section.
@@ -1170,7 +1244,8 @@ def write_index_sheet(ws, code_to_meta: dict, window_start: date,
 # ═══════════════════════════════════════════════════════════════════
 
 def build_workbook(conn, window_start: date, last_complete_sun: date,
-                   max_data_date: date, source_note: str) -> Workbook:
+                   max_data_date: date, source_note: str,
+                   full_week_total: bool = False) -> Workbook:
     wb = Workbook()
     wb.remove(wb.active)
 
@@ -1221,6 +1296,7 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
         ws_g, "Daily_Account", window_start, max_data_date,
         max_data_date, last_complete_sun,
         daily_first_row, daily_last_row, label="Account",
+        full_week_total=full_week_total,
     )
     print("  ✓ DOW_Account")
 
@@ -1256,6 +1332,7 @@ def build_workbook(conn, window_start: date, last_complete_sun: date,
             ws_g, f"Daily_{code}", window_start, max_data_date,
             max_data_date, last_complete_sun,
             5, last_row, label=cname,
+            full_week_total=full_week_total,
         )
         print(f"  ✓ Daily_{code} / DOW_{code}  ({cname})")
 
@@ -1489,6 +1566,12 @@ def parse_args():
     p.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
                    help=f"Number of complete weeks to include. "
                         f"Default: {DEFAULT_WEEKS}")
+    p.add_argument("--full-week-total", action="store_true",
+                   help="Override matched-day totals: the DOW 'Total' "
+                        "column always covers the full Mon-Sun week "
+                        "(week_start + 6), even when the latest week is "
+                        "partial. Default behavior matches every week's "
+                        "Total to the latest data weekday.")
     return p.parse_args()
 
 
@@ -1516,8 +1599,11 @@ def main():
     print()
 
     print("Building workbook...")
+    if args.full_week_total:
+        print("  Total column:        FULL WEEK (override; Mon-Sun +6)")
     wb = build_workbook(conn, window_start, last_complete_sun,
-                        max_data_date, source_note)
+                        max_data_date, source_note,
+                        full_week_total=args.full_week_total)
 
     run_date = max_data_date.isoformat()
     output_path = output_dir / f"campaign_performance_data_google_{run_date}.xlsx"

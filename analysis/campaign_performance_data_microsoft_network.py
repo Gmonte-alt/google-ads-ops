@@ -1,0 +1,1489 @@
+"""
+Campaign Performance Data Tables — Microsoft Home Insurance (Search vs Audience)
+═══════════════════════════════════════════════════════════════════════
+Ported from the Google device-split data-tables workbook. Same layout and
+the same 13-metric panel, but the three side-by-side sections split by
+NETWORK instead of by device:
+
+    Total     = Search + Audience  (whole account)
+    Search    = campaign_performance_daily           (device='ALL')
+    Audience  = campaign_performance_network_daily    (device='ALL',
+                                                       network='Audience')
+
+Mobile is a low share of the Microsoft audience network, so a device
+split isn't informative there; the network split shows how Search and
+Audience each perform across every metric. Audience is derived in-sheet
+as Total − Search, so Search + Audience reconcile to Total by
+construction (the same mechanic the original used for Non-Mobile).
+
+METRICS (per network section):
+  - Impressions, Clicks, CTR                 (volume + engagement)
+  - Cost                                     (spend)
+  - Conversions, CvR, Revenue                (outcome)
+  - CPC, CPA, RPL, ROAS                      (derived efficiency)
+  - GP, Profit Margin                        (profitability)
+
+MICROSOFT CONVENTIONS (match the other Microsoft scripts):
+  - cost = cost_micros / 1e6
+  - conversions = the `conversions` column (bid-strategy volume; no
+    keyword routing — that was a Google-only concern)
+  - revenue = `all_conversion_value` (offline-inclusive; NOT
+    `conversion_value`)
+  - campaign_id is the stable key across the June-2026 tier rename;
+    short_code is tier-aware (Tier{N} → T{N}).
+
+Window: 12 complete Mon-Sun weeks ending the most recent Sunday on or
+before MAX(date), plus all days available in the current partial week.
+
+SHEETS:
+  - Index: navigation map + run context.
+  - Daily_<code>: date, weekday, Total (5 stored + 8 derived), Search
+    (5 stored, cols P-T), Audience (5 formulas = Total − Search, cols
+    U-Y), and per-network GP (Z/AA). Derived metrics (CPC, CPA, RPL,
+    ROAS, GP, CTR, CvR, margin) are Excel formulas. Current-week rows
+    tinted amber.
+  - DOW_<code>: weeks-as-rows × weekdays-as-columns, thirteen stacked
+    grids, each repeated in three side-by-side sections — Total (A..I),
+    Search (V..AD), Audience (AQ..AY) — with a per-section trend chart.
+    Grid cells use SUMIFS referencing the Daily sheet.
+
+SHEET ORDER: Index first, then ALL DOW sheets side by side (DOW_Account,
+then per-campaign), then all Daily sheets in the same relative order.
+
+Scope: account-level (sum across all ENABLED + PAUSED campaigns) plus one
+set of sheets per campaign with spend OR revenue in the window.
+
+A reconciliation check at the end prints Search / Audience / Total spend,
+conversions, revenue and ROAS, the audience share, and a device='ALL'
+double-count guard (ALL rollup vs Σ of non-ALL device rows) for each
+network table.
+
+USAGE:
+  python campaign_performance_data_microsoft_network.py
+  python campaign_performance_data_microsoft_network.py --end-date 2026-05-10
+  python campaign_performance_data_microsoft_network.py --weeks 16
+
+OUTPUT: campaign_performance_data_microsoft_network_<YYYY-MM-DD>.xlsx
+"""
+
+import argparse
+import re
+import sqlite3
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.chart import LineChart, Reference
+from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.drawing.line import LineProperties
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+# ── CONFIG ─────────────────────────────────────────────────────────
+ACCOUNT_ID = 2
+ACCOUNT_LABEL = "microsoft_home"
+DEFAULT_DB_PATH = Path(r"C:\Projects\google-ads-ops\db\paid_search.db")
+DEFAULT_OUTPUT_DIR = Path(r"C:\Projects\google-ads-ops\analysis\output")
+DEFAULT_WEEKS = 12
+
+HEADER_FILL = "305496"
+HEADER_FONT_COLOR = "FFFFFF"
+ACCOUNT_FILL = "E7E6E6"      # light grey background for totals rows
+CURRENT_WEEK_FILL = "FFF2CC"  # amber tint for partial/current week
+TOTAL_COL_TINT = "EAF2F9"     # light blue tint for the Total week-sum column
+THIN_BORDER = Side(border_style="thin", color="BFBFBF")
+
+
+def banner(text: str) -> None:
+    print("═" * 70)
+    print(text)
+    print("═" * 70)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DATE RESOLUTION
+# ═══════════════════════════════════════════════════════════════════
+
+def resolve_window(conn, cli_end_date: str | None, n_weeks: int):
+    """Resolve the analysis window.
+
+    Returns (window_start_mon, last_complete_sun, max_data_date, source_note).
+
+    - window_start_mon: Monday of the earliest complete week to display
+    - last_complete_sun: Sunday of the most recent COMPLETE week
+    - max_data_date: MAX(date) in campaign_performance_daily (device='ALL');
+      the current partial week runs from (last_complete_sun + 1d) through
+      max_data_date
+
+    If cli_end_date is provided, treat it as the desired "last_complete_sun"
+    (or the most recent Sunday on or before it if it's mid-week), and ignore
+    any further data in the DB.
+
+    No backfill buffer is applied — impressions/clicks/cost finalize within
+    hours. The workbook surfaces the partial week as a visually distinct
+    "current" region.
+    """
+    cur = conn.execute(
+        """SELECT MAX(t.date)
+           FROM campaign_performance_daily t
+           JOIN campaigns c ON c.campaign_id = t.campaign_id
+           WHERE c.account_id = ? AND t.device = 'ALL'""",
+        (ACCOUNT_ID,),
+    )
+    row = cur.fetchone()
+    if not row or not row[0]:
+        raise RuntimeError(
+            f"No data in campaign_performance_daily for account {ACCOUNT_ID} "
+            f"with device='ALL'"
+        )
+    max_data_date = date.fromisoformat(row[0])
+
+    if cli_end_date:
+        anchor = date.fromisoformat(cli_end_date)
+        source_note = f"CLI override (--end-date {cli_end_date})"
+        days_past_sun = (anchor.weekday() + 1) % 7
+        last_complete_sun = anchor - timedelta(days=days_past_sun)
+        max_data_date = min(max_data_date, anchor)
+    else:
+        if max_data_date.weekday() == 6:  # Sunday
+            last_complete_sun = max_data_date
+        else:
+            days_past_sun = (max_data_date.weekday() + 1) % 7
+            last_complete_sun = max_data_date - timedelta(days=days_past_sun)
+        source_note = f"auto-detect: MAX(date)={max_data_date}"
+
+    week_monday = last_complete_sun - timedelta(days=6)
+    window_start_mon = week_monday - timedelta(weeks=n_weeks - 1)
+
+    return window_start_mon, last_complete_sun, max_data_date, source_note
+
+
+# ═══════════════════════════════════════════════════════════════════
+# DB QUERIES
+# ═══════════════════════════════════════════════════════════════════
+
+def fetch_campaigns(conn) -> pd.DataFrame:
+    """Enabled + Paused campaigns. Sorted by name for stable ordering."""
+    sql = """
+    SELECT
+        campaign_id,
+        campaign_name,
+        status,
+        target_cpa_micros / 1.0e6 AS current_tcpa
+    FROM campaigns
+    WHERE account_id = ?
+      AND status IN ('ENABLED', 'PAUSED')
+    ORDER BY status, campaign_name
+    """
+    return pd.read_sql(sql, conn, params=(ACCOUNT_ID,))
+
+
+def fetch_daily_metrics(conn, start_date: date, end_date: date) -> pd.DataFrame:
+    """Per (campaign_id, date): SEARCH-network and combined-Total metrics,
+    split by NETWORK (not device).
+
+    SEARCH network   → campaign_performance_daily (device='ALL' rollup).
+    AUDIENCE network → campaign_performance_network_daily (device='ALL',
+                       network='Audience').
+    Both tables store per-device rows plus a device='ALL' rollup; filtering
+    to 'ALL' is REQUIRED or the per-device rows (DESKTOP/MOBILE/TABLET/
+    CONNECTED_TV) double-count against the rollup. Mobile makes up a low
+    share of the audience network, so this workbook splits by network
+    rather than by device.
+
+    Microsoft metric conventions (match the other Microsoft scripts):
+      - cost   = cost_micros / 1e6
+      - conversions = the `conversions` column (the bid-strategy volume;
+        no keyword routing — that's a Google-only concern)
+      - revenue = `all_conversion_value` (offline-inclusive; NOT
+        `conversion_value`)
+
+    COLUMN-NAME NOTE (machinery reuse): this file was ported from the
+    Google device-split template, which used columns `impressions..`
+    (=Total) and `m_*` (=one slice). Here the meanings are re-mapped for
+    the NETWORK split and the internal names are kept so the sheet/DOW
+    machinery is unchanged:
+        impressions/clicks/cost_usd/primary_conversions/primary_conv_value
+            = TOTAL  (Search + Audience)
+        m_*  = SEARCH slice (stored)
+    The workbook derives the AUDIENCE section as Total − Search (the
+    'nm_' formulas), so Search + Audience reconcile to Total by
+    construction — exactly as Mobile + Non-Mobile did in the original.
+
+    Returns columns:
+        campaign_id, date, impressions, clicks, cost_usd,
+        primary_conversions, primary_conv_value,
+        m_impressions, m_clicks, m_cost_usd,
+        m_primary_conversions, m_primary_conv_value
+    """
+    search_sql = """
+    SELECT
+        t.campaign_id AS campaign_id,
+        t.date AS date,
+        SUM(t.impressions) AS impressions,
+        SUM(t.clicks) AS clicks,
+        SUM(t.cost_micros) / 1.0e6 AS cost_usd,
+        SUM(t.conversions) AS conv,
+        SUM(t.all_conversion_value) AS rev
+    FROM campaign_performance_daily t
+    JOIN campaigns c ON c.campaign_id = t.campaign_id
+    WHERE c.account_id = ?
+      AND t.device = 'ALL'
+      AND t.date BETWEEN ? AND ?
+    GROUP BY t.campaign_id, t.date
+    """
+    audience_sql = """
+    SELECT
+        t.campaign_id AS campaign_id,
+        t.date AS date,
+        SUM(t.impressions) AS impressions,
+        SUM(t.clicks) AS clicks,
+        SUM(t.cost_micros) / 1.0e6 AS cost_usd,
+        SUM(t.conversions) AS conv,
+        SUM(t.all_conversion_value) AS rev
+    FROM campaign_performance_network_daily t
+    JOIN campaigns c ON c.campaign_id = t.campaign_id
+    WHERE c.account_id = ?
+      AND t.device = 'ALL'
+      AND LOWER(t.network) = 'audience'
+      AND t.date BETWEEN ? AND ?
+    GROUP BY t.campaign_id, t.date
+    """
+    params = (ACCOUNT_ID, start_date.isoformat(), end_date.isoformat())
+    s = pd.read_sql(search_sql, conn, params=params)
+    a = pd.read_sql(audience_sql, conn, params=params)
+
+    # Outer merge so a campaign/date present in only one network still shows.
+    merged = s.merge(a, on=["campaign_id", "date"], how="outer",
+                     suffixes=("_s", "_a"))
+    for col in merged.columns:
+        if col not in ("campaign_id", "date"):
+            merged[col] = merged[col].fillna(0.0)
+
+    out = pd.DataFrame()
+    out["campaign_id"] = merged["campaign_id"]
+    out["date"] = merged["date"]
+    # TOTAL = Search + Audience
+    out["impressions"] = (merged["impressions_s"] + merged["impressions_a"]).astype(int)
+    out["clicks"] = (merged["clicks_s"] + merged["clicks_a"]).astype(int)
+    out["cost_usd"] = (merged["cost_usd_s"] + merged["cost_usd_a"]).astype(float)
+    out["primary_conversions"] = (merged["conv_s"] + merged["conv_a"]).astype(float)
+    out["primary_conv_value"] = (merged["rev_s"] + merged["rev_a"]).astype(float)
+    # m_* = SEARCH slice (stored); AUDIENCE is derived in-sheet as Total − Search
+    out["m_impressions"] = merged["impressions_s"].astype(int)
+    out["m_clicks"] = merged["clicks_s"].astype(int)
+    out["m_cost_usd"] = merged["cost_usd_s"].astype(float)
+    out["m_primary_conversions"] = merged["conv_s"].astype(float)
+    out["m_primary_conv_value"] = merged["rev_s"].astype(float)
+
+    return out[["campaign_id", "date", "impressions", "clicks", "cost_usd",
+                "primary_conversions", "primary_conv_value",
+                "m_impressions", "m_clicks", "m_cost_usd",
+                "m_primary_conversions", "m_primary_conv_value"]]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SHORT-CODE GENERATION
+# ═══════════════════════════════════════════════════════════════════
+
+STATE_ABBR = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+    "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+    "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+    "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+    "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN",
+    "MISSISSIPPI": "MS", "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE",
+    "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
+    "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC",
+    "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK", "OREGON": "OR",
+    "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+    "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+    "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
+}
+
+TIER_ABBR = {
+    "TIER ONE": "T1",
+    "TIER TWO": "T2",
+    "TIER THREE": "T3",
+    "TIER FOUR": "T4",
+}
+
+
+def short_code(campaign_name: str) -> str:
+    """Extract a short identifier from a Microsoft Home Insurance campaign name.
+
+    Handles BOTH conventions in the account:
+      NEW tier-group (post-June-2026 restructure):
+        'HOME INSURANCE_STATE-GROUP_Tier2RPL65Plus_..._USA-STE' -> 'T2'
+      OLD state-based (paused legacy campaigns):
+        'HOME INSURANCE-CALIFORNIA-SEARCH-MOBILE-USA-STE'       -> 'CA'
+
+    Tier branch runs FIRST (load-bearing — Tier 5 is the renamed Indiana
+    shell, so a tier name can contain an embedded state token). Codes key
+    off the tier NUMBER only; the caller dedupes collisions by appending a
+    numeric suffix.
+    """
+    name_up = campaign_name.upper()
+    m = re.search(r"TIER\s*(\d+)", name_up)
+    if m:
+        return f"T{m.group(1)}"
+    for state, abbr in STATE_ABBR.items():
+        if state in name_up:
+            return abbr
+    cleaned = "".join(c for c in name_up if c.isalnum())[:8]
+    return cleaned or "CAMP"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SHEET WRITERS — DAILY
+# ═══════════════════════════════════════════════════════════════════
+#
+# Daily sheet column map (referenced from DOW SUMIFS — keep in sync):
+#
+#   A   date
+#   B   weekday (Mon/Tue/.../Sun)
+#   C   impressions          (stored, Total = Search + Audience)
+#   D   clicks               (stored, Total)
+#   E   cost_usd             (stored, Total)
+#   F   conversions          (stored, Total; = `conversions` column)
+#   G   revenue              (stored, Total; = all_conversion_value)
+#   H   cpc      = E/D
+#   I   cpa      = E/F       (cost per conversion)
+#   J   rpl      = G/F       (revenue per conversion)
+#   K   roas     = G/E
+#   L   gp       = G - E     (gross profit)
+#   M   ctr      = D/C       (click-through rate, %)
+#   N   cvr      = F/D       (conversion rate, %)
+#   O   margin   = L/G       (profit margin, %)
+#   ── NETWORK split (feeds the Search / Audience DOW sections) ──
+#   The dict keys keep the ported 'm_'/'nm_' prefixes so the grid
+#   machinery is unchanged; here m_* = SEARCH (stored) and nm_* =
+#   AUDIENCE (derived = Total − Search).
+#   P   m_impressions        (stored, SEARCH  — campaign_performance_daily)
+#   Q   m_clicks             (stored, SEARCH)
+#   R   m_cost_usd           (stored, SEARCH)
+#   S   m_primary_conv       (stored, SEARCH conversions)
+#   T   m_revenue            (stored, SEARCH all_conversion_value)
+#   U   nm_impressions = C-P (formula — AUDIENCE ≡ Total − Search)
+#   V   nm_clicks      = D-Q
+#   W   nm_cost_usd    = E-R
+#   X   nm_primary_conv= F-S
+#   Y   nm_revenue     = G-T
+#   Z   m_gp           = T-R (formula — SEARCH gross profit)
+#   AA  nm_gp          = Y-W (formula — AUDIENCE gross profit)
+#
+# DAILY_COLS is the single source of truth; DOW grids read from it via
+# string lookups so a column shuffle here propagates everywhere.
+DAILY_COLS = {
+    "date": "A", "weekday": "B",
+    "impressions": "C", "clicks": "D", "cost_usd": "E",
+    "primary_conv": "F", "revenue": "G",
+    "cpc": "H", "cpl": "I", "rpl": "J", "roas": "K", "gp": "L",
+    "ctr": "M", "cvr": "N", "margin": "O",
+    # SEARCH network (stored)  — 'm_' prefix retained from the port
+    "m_impressions": "P", "m_clicks": "Q", "m_cost_usd": "R",
+    "m_primary_conv": "S", "m_revenue": "T",
+    # AUDIENCE network (derived: Total − Search) — 'nm_' prefix retained
+    "nm_impressions": "U", "nm_clicks": "V", "nm_cost_usd": "W",
+    "nm_primary_conv": "X", "nm_revenue": "Y",
+    # Per-network gross profit (derived)
+    "m_gp": "Z", "nm_gp": "AA",
+}
+
+
+def write_daily_sheet(ws, daily_df: pd.DataFrame,
+                      start_date: date, end_date: date,
+                      max_data_date: date, last_complete_sun: date,
+                      label: str, is_account: bool):
+    """Write a Daily_<code> sheet with 5 stored + 5 derived metrics.
+
+    daily_df expected columns: date, impressions, clicks, cost_usd,
+    primary_conversions, primary_conv_value.
+    Rows are filled in for EVERY date in the [start_date, end_date] range
+    even where source data is missing (zeros). This makes the DOW SUMIFS
+    formulas simple — no date gaps.
+
+    Layout: see DAILY_COLS above (12 columns).
+    """
+    title_font = Font(bold=True, size=12, color="305496", name="Arial")
+    header_fill = PatternFill("solid", fgColor=HEADER_FILL)
+    header_font = Font(bold=True, color=HEADER_FONT_COLOR, name="Arial")
+    body_font = Font(name="Arial")
+    note_font = Font(italic=True, color="595959", size=9, name="Arial")
+    current_fill = PatternFill("solid", fgColor=CURRENT_WEEK_FILL)
+
+    ws.cell(row=1, column=1, value=f"Daily metrics: {label}").font = title_font
+    ws.cell(row=2, column=1, value=(
+        f"Window: {start_date} (Mon) to {max_data_date}. Last complete "
+        f"week ends {last_complete_sun} (Sun). Rows after that are "
+        f"CURRENT (partial) week — amber. Split by NETWORK: Total = Search "
+        f"+ Audience. Conversions = `conversions`; revenue = "
+        f"`all_conversion_value`. Derived metrics (CPC, CPA, RPL, ROAS, GP) "
+        f"are Excel formulas, not stored. Columns P-T are the SEARCH network "
+        f"(campaign_performance_daily); U-Y are AUDIENCE formulas (= Total − "
+        f"Search); Z/AA are per-network gross profit. These feed the Search "
+        f"/ Audience sections on the DOW sheet.")).font = note_font
+
+    headers = [
+        "date", "weekday",
+        "impressions", "clicks", "cost_usd",
+        "conversions", "revenue",
+        "cpc", "cpa", "rpl", "roas", "gp",
+        "ctr", "cvr", "margin",
+        "s_impressions", "s_clicks", "s_cost_usd",
+        "s_conversions", "s_revenue",
+        "a_impressions", "a_clicks", "a_cost_usd",
+        "a_conversions", "a_revenue",
+        "s_gp", "a_gp",
+    ]
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    # Lookup map: date -> (imp, clicks, cost, conv, rev,
+    #                      m_imp, m_clicks, m_cost, m_conv, m_rev)
+    date_map = {}
+    for _, r in daily_df.iterrows():
+        if isinstance(r["date"], str):
+            d = date.fromisoformat(r["date"])
+        else:
+            d = r["date"]
+        date_map[d] = (
+            int(r["impressions"]),
+            int(r["clicks"]),
+            float(r["cost_usd"]),
+            float(r["primary_conversions"]),
+            float(r["primary_conv_value"]),
+            int(r["m_impressions"]),
+            int(r["m_clicks"]),
+            float(r["m_cost_usd"]),
+            float(r["m_primary_conversions"]),
+            float(r["m_primary_conv_value"]),
+        )
+
+    WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    int_fmt = "#,##0"
+    money_fmt = '"$"#,##0.00'
+    conv_fmt = "#,##0.00"
+    roas_fmt = "0.00"
+    pct_fmt = "0.00%"
+
+    row_idx = 5
+    cur_date = start_date
+    while cur_date <= end_date:
+        (imp, clk, cost, conv, rev,
+         m_imp, m_clk, m_cost, m_conv, m_rev) = date_map.get(
+            cur_date, (0, 0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0.0, 0.0)
+        )
+        is_current_week = cur_date > last_complete_sun
+        r = row_idx
+
+        # A: date, B: weekday
+        ws.cell(row=r, column=1, value=cur_date).number_format = "yyyy-mm-dd"
+        ws.cell(row=r, column=2, value=WEEKDAY_NAMES[cur_date.weekday()])
+        # C: imp, D: clicks, E: cost — stored values
+        ws.cell(row=r, column=3, value=imp).number_format = int_fmt
+        ws.cell(row=r, column=4, value=clk).number_format = int_fmt
+        ws.cell(row=r, column=5, value=round(cost, 2)).number_format = money_fmt
+        # F: primary_conv, G: revenue — stored, routed values
+        ws.cell(row=r, column=6, value=round(conv, 2)).number_format = conv_fmt
+        ws.cell(row=r, column=7, value=round(rev, 2)).number_format = money_fmt
+        # H: CPC = cost/clicks
+        ws.cell(row=r, column=8, value=f"=IF(D{r}=0,0,E{r}/D{r})").number_format = money_fmt
+        # I: CPL = cost/conv
+        ws.cell(row=r, column=9, value=f"=IF(F{r}=0,0,E{r}/F{r})").number_format = money_fmt
+        # J: RPL = revenue/conv
+        ws.cell(row=r, column=10, value=f"=IF(F{r}=0,0,G{r}/F{r})").number_format = money_fmt
+        # K: ROAS = revenue/cost
+        ws.cell(row=r, column=11, value=f"=IF(E{r}=0,0,G{r}/E{r})").number_format = roas_fmt
+        # L: GP = revenue - cost
+        ws.cell(row=r, column=12, value=f"=G{r}-E{r}").number_format = money_fmt
+        # M: CTR = clicks/impressions
+        ws.cell(row=r, column=13, value=f"=IF(C{r}=0,0,D{r}/C{r})").number_format = pct_fmt
+        # N: CvR = primary_conv/clicks
+        ws.cell(row=r, column=14, value=f"=IF(D{r}=0,0,F{r}/D{r})").number_format = pct_fmt
+        # O: Margin = gp/revenue.  References L (gp), so zero-guard on revenue (G).
+        ws.cell(row=r, column=15, value=f"=IF(G{r}=0,0,L{r}/G{r})").number_format = pct_fmt
+
+        # P–T: Mobile stored values (device='MOBILE' slice)
+        ws.cell(row=r, column=16, value=m_imp).number_format = int_fmt
+        ws.cell(row=r, column=17, value=m_clk).number_format = int_fmt
+        ws.cell(row=r, column=18, value=round(m_cost, 2)).number_format = money_fmt
+        ws.cell(row=r, column=19, value=round(m_conv, 2)).number_format = conv_fmt
+        ws.cell(row=r, column=20, value=round(m_rev, 2)).number_format = money_fmt
+        # U–Y: Non-Mobile = Total − Mobile (formulas, so the split
+        # reconciles exactly by construction)
+        ws.cell(row=r, column=21, value=f"=C{r}-P{r}").number_format = int_fmt
+        ws.cell(row=r, column=22, value=f"=D{r}-Q{r}").number_format = int_fmt
+        ws.cell(row=r, column=23, value=f"=E{r}-R{r}").number_format = money_fmt
+        ws.cell(row=r, column=24, value=f"=F{r}-S{r}").number_format = conv_fmt
+        ws.cell(row=r, column=25, value=f"=G{r}-T{r}").number_format = money_fmt
+        # Z / AA: device gross profit (feeds Mobile / Non-Mobile GP and
+        # Margin grids on the DOW sheet)
+        ws.cell(row=r, column=26, value=f"=T{r}-R{r}").number_format = money_fmt
+        ws.cell(row=r, column=27, value=f"=Y{r}-W{r}").number_format = money_fmt
+
+        # Border + current-week tint
+        for col_idx in range(1, 28):
+            cell = ws.cell(row=r, column=col_idx)
+            cell.font = body_font
+            cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                 left=THIN_BORDER, right=THIN_BORDER)
+            if is_current_week:
+                cell.fill = current_fill
+
+        row_idx += 1
+        cur_date += timedelta(days=1)
+
+    last_row = row_idx - 1
+
+    # Column widths
+    ws.column_dimensions["A"].width = 12   # date
+    ws.column_dimensions["B"].width = 8    # weekday
+    for c in range(3, 28):
+        ws.column_dimensions[get_column_letter(c)].width = 12
+    ws.freeze_panes = ws.cell(row=5, column=3)  # freeze date + weekday
+
+    return last_row
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SHEET WRITERS — DAY-OF-WEEK GRID
+# ═══════════════════════════════════════════════════════════════════
+
+def write_dow_grid_sheet(ws, daily_sheet_name: str,
+                          start_date: date, end_date: date,
+                          max_data_date: date, last_complete_sun: date,
+                          daily_first_row: int, daily_last_row: int,
+                          label: str, full_week_total: bool = False):
+    """Write a DOW_<code> sheet with thirteen stacked grids in three
+    thematic blocks:
+
+       Volume:           (A) Impressions     (B) Clicks     (C) CTR
+                         (D) Primary Conv    (E) Revenue
+       Cost/efficiency:  (F) Cost            (G) CPC        (H) CPL
+                         (I) CvR
+       Outcome:          (J) ROAS            (K) RPL        (L) GP
+                         (M) Margin
+
+    Grouping puts raw activity at the top, cost-side metrics in the
+    middle, and outcome-side metrics at the bottom, so a top-to-bottom
+    scan moves naturally from impressions through spend efficiency to
+    profitability.
+
+    Layout per grid:
+      week_start | Mon | Tue | Wed | Thu | Fri | Sat | Sun | Total
+      ...rows = ISO weeks (Mon-Sun)
+      avg/weighted | <weighted column totals>
+      WoW %        | <most recent complete week vs prior, per weekday>
+
+    Day cells use SUMIFS to read the Daily sheet by date. The Total
+    column (col I on the DOW sheet) is also a SUMIFS — same predicate
+    extended to a 7-day range. For ratio grids, the per-day cell is
+    SUMIFS(num)/SUMIFS(den) for that one day; the Total column applies
+    the same SUMIFS pattern across the week range (i.e., a weighted
+    week ratio). The bottom 'avg/weighted' row computes the same kind
+    of aggregate across all weeks for a given weekday. The 'WoW %' row
+    compares the two most recent COMPLETE weeks per weekday — the
+    partial / current week is excluded so the comparison stays
+    apples-to-apples; if the window doesn't contain two complete weeks
+    the row renders blank.
+
+    GP is a derived metric on Daily (`=revenue - cost`) but it remains
+    linear, so SUMIFS over the GP column produces the same answer as
+    SUMIFS(revenue) − SUMIFS(cost). Treating it as a 'sum' grid is
+    therefore safe; the Margin grid reuses the same numerator.
+
+    Each grid gets a line chart per device section, anchored two
+    columns right of that section's Total column, plotting the
+    section's weekly Total across all weeks with value-only data
+    labels positioned above the line, plus a dashed grey reference
+    line at the average of the plotted weeks (fed by a hidden helper
+    column right of each Total column).
+
+    MATCHED-DAY TOTALS. The 'Total' column covers Mon..(weekday of the
+    latest data date) for every week — full Mon-Sun when the latest
+    week is complete — so the current partial week reads like-for-like
+    against history in both the grids and the charts.
+
+    DEVICE SECTIONS. Every grid repeats three times side by side on the
+    same rows: Total (device='ALL', columns A..I — unchanged layout),
+    Mobile (device='MOBILE', columns V..AD), and Non-Mobile (columns
+    AQ..AY). Mobile reads the m_* stored columns on the Daily sheet;
+    Non-Mobile reads the nm_* formula columns, which are defined as
+    Total − Mobile so the three sections reconcile exactly by
+    construction (Non-Mobile = Desktop + Tablet). Each section's chart
+    occupies the ~11-column gutter to its right (J..U, AE..AP, AZ..).
+    """
+    title_font = Font(bold=True, size=12, color="305496", name="Arial")
+    section_font = Font(bold=True, size=11, color="305496", name="Arial")
+    header_fill = PatternFill("solid", fgColor=HEADER_FILL)
+    header_font = Font(bold=True, color=HEADER_FONT_COLOR, name="Arial")
+    body_font = Font(name="Arial")
+    note_font = Font(italic=True, color="595959", size=9, name="Arial")
+    current_fill = PatternFill("solid", fgColor=CURRENT_WEEK_FILL)
+    totals_fill = PatternFill("solid", fgColor=ACCOUNT_FILL)
+    totals_font = Font(bold=True, name="Arial")
+    total_col_fill = PatternFill("solid", fgColor=TOTAL_COL_TINT)
+
+    ws.cell(row=1, column=1, value=f"Day-of-week grid: {label}").font = title_font
+    ws.cell(row=2, column=1, value=(
+        f"Thirteen grids in three blocks: Volume (Imp, Clicks, CTR, "
+        f"Primary Conv, Revenue), Cost & efficiency (Cost, CPC, CPL, "
+        f"CvR), Outcome (ROAS, RPL, GP, Margin). Use the 'Jump to:' "
+        f"links below to navigate. Each row is one ISO week (Mon-Sun). "
+        f"Scan a column to compare a single weekday across weeks. The "
+        f"rightmost 'Total' column is MATCHED-DAY: every week sums (or "
+        f"weight-averages, for ratios) Mon through the latest data "
+        f"weekday, so the current partial week compares like-for-like "
+        f"against prior weeks; when the latest week is complete this is "
+        f"the full Mon-Sun week. 'avg/weighted' row "
+        f"aggregates across all weeks for a single weekday — weighted "
+        f"for ratios. 'WoW %' row beneath compares the two most recent "
+        f"complete weeks; blank when the window has fewer than two "
+        f"complete weeks. Negative WoW shifts render red. Each grid "
+        f"repeats in three device sections side by side: Total (col A), "
+        f"Mobile (col V), and Non-Mobile (col AQ, computed as Total "
+        f"minus Mobile so the three always reconcile). A trend chart of "
+        f"each section's weekly Total column follows that section's "
+        f"data range; the dashed grey line is the average of the "
+        f"plotted weeks.")).font = note_font
+
+    # Build list of week-starting Mondays covered by the window.
+    week_mondays = []
+    cur_mon = start_date
+    while cur_mon <= end_date:
+        week_mondays.append(cur_mon)
+        cur_mon += timedelta(days=7)
+    WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    # ── Matched-day Total ──────────────────────────────────────────────
+    # The 'Total' column sums Mon..(latest data weekday) for EVERY week,
+    # not Mon..Sun. When data runs through, say, Wednesday, all weeks
+    # total Mon–Wed, so the current partial week is directly comparable
+    # to prior weeks (and to the average line on the trend charts). When
+    # the latest week is complete the offset is 6 and totals are full
+    # weeks, exactly as before.
+    # full_week_total=True (--full-week-total on the CLI) overrides this
+    # and forces the full Mon-Sun (+6) range regardless of partial data;
+    # the current partial week's Total then simply covers whatever days
+    # exist so far.
+    if full_week_total:
+        matched_offset = 6
+    else:
+        matched_offset = min(6, (max_data_date - week_mondays[-1]).days)
+    total_header = ("Total" if matched_offset == 6
+                    else f"Total (Mon–{WEEKDAY_NAMES[matched_offset]})")
+
+    # SUMIFS range references on the Daily sheet
+    date_range = (f"'{daily_sheet_name}'!$A${daily_first_row}:"
+                  f"$A${daily_last_row}")
+    weekday_range = (f"'{daily_sheet_name}'!$B${daily_first_row}:"
+                     f"$B${daily_last_row}")
+
+    def col_range(col_letter: str) -> str:
+        return (f"'{daily_sheet_name}'!${col_letter}${daily_first_row}:"
+                f"${col_letter}${daily_last_row}")
+
+    def write_grid(start_row: int, metric_label: str, grid_kind: str,
+                   number_format: str, colmap: dict, start_col: int = 1,
+                   sum_key: str | None = None,
+                   num_key: str | None = None,
+                   den_key: str | None = None):
+        """Write one grid anchored at (start_row, start_col). Returns the
+        last row used (the WoW row).
+
+        colmap maps metric keys ('imp', 'clk', 'cost', 'conv', 'rev',
+        'gp') to Daily-sheet column letters for ONE device section, so
+        the same spec list drives the Total, Mobile, and Non-Mobile
+        grids — only the colmap (and start_col) changes.
+
+        grid_kind:
+          'sum'   — single-column SUMIFS using colmap[sum_key]
+          'ratio' — SUMIFS(num) / SUMIFS(den), weighted at the SUMIFS
+                    aggregation level so the 'Total' column and
+                    'avg/weighted' row both stay correct
+        """
+        sum_col = colmap[sum_key] if sum_key else None
+        num_col = colmap[num_key] if num_key else None
+        den_col = colmap[den_key] if den_key else None
+
+        wk_letter = get_column_letter(start_col)      # week_start column
+        total_col_idx = start_col + 8                 # 'Total' column
+
+        ws.cell(row=start_row, column=start_col,
+                value=metric_label).font = section_font
+
+        # Header row: week_start | Mon..Sun | Total
+        header_row = start_row + 1
+        headers_row = ["week_start"] + WEEKDAY_NAMES + [total_header]
+        for offset, h in enumerate(headers_row):
+            cell = ws.cell(row=header_row, column=start_col + offset, value=h)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+        # Data rows: one per week. start_col+1..+7 are Mon..Sun;
+        # start_col+8 is Total.
+        for wk_idx, wk_mon in enumerate(week_mondays):
+            r = header_row + 1 + wk_idx
+            ws.cell(row=r, column=start_col,
+                    value=wk_mon).number_format = "yyyy-mm-dd"
+            is_current_week = wk_mon > last_complete_sun - timedelta(days=6)
+
+            # Per-day cells (Mon..Sun)
+            for wd in range(7):
+                col_idx = start_col + 1 + wd
+                date_ref = (f"${wk_letter}{r}+{wd}" if wd > 0
+                            else f"${wk_letter}{r}")
+                if grid_kind == "sum":
+                    formula = (f"=SUMIFS({col_range(sum_col)},"
+                               f"{date_range},{date_ref})")
+                else:  # ratio
+                    num = (f"SUMIFS({col_range(num_col)},"
+                           f"{date_range},{date_ref})")
+                    den = (f"SUMIFS({col_range(den_col)},"
+                           f"{date_range},{date_ref})")
+                    formula = f"=IFERROR({num}/{den},\"\")"
+                cell = ws.cell(row=r, column=col_idx, value=formula)
+                cell.number_format = number_format
+                cell.font = body_font
+                cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                     left=THIN_BORDER, right=THIN_BORDER)
+                if is_current_week:
+                    cell.fill = current_fill
+
+            # Total column: same SUMIFS predicate over the MATCHED day
+            # range Mon..+matched_offset (see matched-day note above),
+            # so every week's Total covers the same weekdays as the
+            # latest partial week. For ratios this is the weighted
+            # matched-day ratio.
+            week_start_ref = f"${wk_letter}{r}"
+            week_end_ref = f"${wk_letter}{r}+{matched_offset}"
+            if grid_kind == "sum":
+                total_formula = (
+                    f"=SUMIFS({col_range(sum_col)},"
+                    f"{date_range},\">=\"&{week_start_ref},"
+                    f"{date_range},\"<=\"&{week_end_ref})"
+                )
+            else:
+                num_total = (
+                    f"SUMIFS({col_range(num_col)},"
+                    f"{date_range},\">=\"&{week_start_ref},"
+                    f"{date_range},\"<=\"&{week_end_ref})"
+                )
+                den_total = (
+                    f"SUMIFS({col_range(den_col)},"
+                    f"{date_range},\">=\"&{week_start_ref},"
+                    f"{date_range},\"<=\"&{week_end_ref})"
+                )
+                total_formula = f"=IFERROR({num_total}/{den_total},\"\")"
+            cell = ws.cell(row=r, column=total_col_idx, value=total_formula)
+            cell.number_format = number_format
+            cell.font = body_font
+            cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                 left=THIN_BORDER, right=THIN_BORDER)
+            # Light blue tint on the Total column, unless this week is
+            # current (amber takes priority).
+            if is_current_week:
+                cell.fill = current_fill
+            else:
+                cell.fill = total_col_fill
+
+        # Bottom 'avg / weighted' row — aggregate across all weeks for
+        # a given weekday. AVERAGEIFS for sums, SUMIFS/SUMIFS for ratios.
+        totals_row = header_row + 1 + len(week_mondays)
+        ws.cell(row=totals_row, column=start_col,
+                value="avg / weighted").font = totals_font
+        ws.cell(row=totals_row, column=start_col).fill = totals_fill
+
+        for wd in range(7):
+            wd_name = WEEKDAY_NAMES[wd]
+            if grid_kind == "sum":
+                formula = (
+                    f"=IFERROR(AVERAGEIFS({col_range(sum_col)},"
+                    f"{weekday_range},\"{wd_name}\"),\"\")"
+                )
+            else:
+                num = (f"SUMIFS({col_range(num_col)},"
+                       f"{weekday_range},\"{wd_name}\")")
+                den = (f"SUMIFS({col_range(den_col)},"
+                       f"{weekday_range},\"{wd_name}\")")
+                formula = f"=IFERROR({num}/{den},\"\")"
+            cell = ws.cell(row=totals_row, column=start_col + 1 + wd,
+                           value=formula)
+            cell.number_format = number_format
+            cell.font = totals_font
+            cell.fill = totals_fill
+            cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                 left=THIN_BORDER, right=THIN_BORDER)
+
+        # Grand total cell (totals row × Total column), consistent with
+        # the matched-day Total column above: for sums, the AVERAGE of
+        # the per-week matched-day totals; for ratios, weighted across
+        # the window restricted to the matched weekdays (WEEKDAY(,2)
+        # returns Mon=1..Sun=7).
+        tot_letter = get_column_letter(total_col_idx)
+        tot_first = header_row + 1
+        tot_last = header_row + len(week_mondays)
+        tot_cells = f"{tot_letter}{tot_first}:{tot_letter}{tot_last}"
+        if grid_kind == "sum":
+            grand_formula = f"=IFERROR(AVERAGE({tot_cells}),\"\")"
+        else:
+            wk_cond = (f"(WEEKDAY({date_range},2)<={matched_offset + 1})")
+            num_all = f"SUMPRODUCT({wk_cond}*{col_range(num_col)})"
+            den_all = f"SUMPRODUCT({wk_cond}*{col_range(den_col)})"
+            grand_formula = f"=IFERROR({num_all}/{den_all},\"\")"
+        cell = ws.cell(row=totals_row, column=total_col_idx,
+                       value=grand_formula)
+        cell.number_format = number_format
+        cell.font = totals_font
+        cell.fill = totals_fill
+        cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                             left=THIN_BORDER, right=THIN_BORDER)
+
+        # ── WoW % row ──────────────────────────────────────────────────
+        # One row beneath the totals row. Compares the two most recent
+        # COMPLETE weeks per weekday (and per Total). Partial / current
+        # week is skipped so the comparison stays apples-to-apples.
+        # Recent week's Monday = last_complete_sun - 6 days; prior =
+        # recent - 7. If either Monday is outside the window the cells
+        # render blank rather than wrong.
+        wow_row = totals_row + 1
+        recent_mon = last_complete_sun - timedelta(days=6)
+        prior_mon = recent_mon - timedelta(days=7)
+        recent_idx = next(
+            (i for i, m in enumerate(week_mondays) if m == recent_mon), None
+        )
+        prior_idx = next(
+            (i for i, m in enumerate(week_mondays) if m == prior_mon), None
+        )
+
+        ws.cell(row=wow_row, column=start_col, value="WoW %").font = totals_font
+        ws.cell(row=wow_row, column=start_col).fill = totals_fill
+        ws.cell(row=wow_row, column=start_col).border = Border(
+            top=THIN_BORDER, bottom=THIN_BORDER,
+            left=THIN_BORDER, right=THIN_BORDER,
+        )
+
+        # Per-weekday cols + Total col — 8 cells starting one right of
+        # the week_start column.
+        wow_col_letters = [get_column_letter(start_col + 1 + i)
+                           for i in range(8)]
+        if recent_idx is not None and prior_idx is not None:
+            recent_data_row = header_row + 1 + recent_idx
+            prior_data_row = header_row + 1 + prior_idx
+            for col_offset, col_letter in enumerate(wow_col_letters):
+                col_idx = start_col + 1 + col_offset
+                recent_ref = f"{col_letter}{recent_data_row}"
+                prior_ref = f"{col_letter}{prior_data_row}"
+                # N() coerces blank-strings (returned by IFERROR on ratio
+                # cells with zero denominator) to 0 so arithmetic works.
+                # Outer IFERROR catches the case where prior is itself blank.
+                formula = (f"=IFERROR(IF(N({prior_ref})=0,\"\","
+                           f"(N({recent_ref})-N({prior_ref}))/N({prior_ref})),\"\")")
+                cell = ws.cell(row=wow_row, column=col_idx, value=formula)
+                cell.number_format = "0.0%;[Red]-0.0%"
+                cell.font = totals_font
+                cell.fill = totals_fill
+                cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                     left=THIN_BORDER, right=THIN_BORDER)
+        else:
+            # Not enough complete weeks — leave the WoW cells empty but
+            # styled so the row is visually present.
+            for col_offset in range(len(wow_col_letters)):
+                col_idx = start_col + 1 + col_offset
+                cell = ws.cell(row=wow_row, column=col_idx, value="")
+                cell.fill = totals_fill
+                cell.border = Border(top=THIN_BORDER, bottom=THIN_BORDER,
+                                     left=THIN_BORDER, right=THIN_BORDER)
+
+        return wow_row
+
+    # Per-device-section column maps into the Daily sheet. Each maps the
+    # six base metric keys to the Daily column letters for that device
+    # slice. DAILY_COLS is the single source of truth (top of file).
+    SEC_TOTAL_COLS = {
+        "imp": DAILY_COLS["impressions"], "clk": DAILY_COLS["clicks"],
+        "cost": DAILY_COLS["cost_usd"], "conv": DAILY_COLS["primary_conv"],
+        "rev": DAILY_COLS["revenue"], "gp": DAILY_COLS["gp"],
+    }
+    # SEARCH network slice (stored in P-T on the Daily sheet)
+    SEC_SEARCH_COLS = {
+        "imp": DAILY_COLS["m_impressions"], "clk": DAILY_COLS["m_clicks"],
+        "cost": DAILY_COLS["m_cost_usd"], "conv": DAILY_COLS["m_primary_conv"],
+        "rev": DAILY_COLS["m_revenue"], "gp": DAILY_COLS["m_gp"],
+    }
+    # AUDIENCE network slice (U-Y formulas = Total − Search on the Daily sheet)
+    SEC_AUDIENCE_COLS = {
+        "imp": DAILY_COLS["nm_impressions"], "clk": DAILY_COLS["nm_clicks"],
+        "cost": DAILY_COLS["nm_cost_usd"], "conv": DAILY_COLS["nm_primary_conv"],
+        "rev": DAILY_COLS["nm_revenue"], "gp": DAILY_COLS["nm_gp"],
+    }
+
+    # Three side-by-side NETWORK sections per grid row, each followed by
+    # an ~11-column chart gutter holding that section's trend chart:
+    #   Total     A..I    → chart in J..U   (anchored K)
+    #   Search    V..AD   → chart in AE..AP (anchored AF)
+    #   Audience  AQ..AY  → chart in AZ..~BK (anchored BA)
+    sections = [
+        ("Total", 1, SEC_TOTAL_COLS),             # A..I
+        ("Search", 22, SEC_SEARCH_COLS),          # V..AD
+        ("Audience", 43, SEC_AUDIENCE_COLS),      # AQ..AY
+    ]
+
+    INT_FMT = "#,##0"
+    MONEY_FMT = '"$"#,##0.00'
+    CONV_FMT = "#,##0.00"
+    ROAS_FMT = "0.00"
+    PCT_FMT = "0.00%"
+
+    # Thirteen grids in three thematic blocks. Each spec is a tuple of
+    # (section_label, nav_link_text, kind, number_format, kwargs_for_write_grid).
+    # kwargs reference metric KEYS ('imp', 'cost', ...) which write_grid
+    # resolves against the active device section's column map, so every
+    # spec drives all three sections.
+    # The nav_link_text is the short label that appears in the "Jump to:"
+    # block at the top of the sheet — kept short so it doesn't truncate in
+    # the column-A-width-14 layout.
+    #
+    # Block 1 — Volume:    Imp, Clicks, CTR, Primary Conv, Revenue
+    # Block 2 — Cost/eff:  Cost, CPC, CPL, CvR
+    # Block 3 — Outcome:   ROAS, RPL, GP, Margin
+    grid_specs = [
+        ("A — Impressions",         "Impressions",  "sum",   INT_FMT,   {"sum_key": "imp"}),
+        ("B — Clicks",              "Clicks",       "sum",   INT_FMT,   {"sum_key": "clk"}),
+        ("C — CTR (weighted)",      "CTR",          "ratio", PCT_FMT,   {"num_key": "clk",  "den_key": "imp"}),
+        ("D — Conversions",         "Conversions",  "sum",   CONV_FMT,  {"sum_key": "conv"}),
+        ("E — Revenue",             "Revenue",      "sum",   MONEY_FMT, {"sum_key": "rev"}),
+        ("F — Cost",                "Cost",         "sum",   MONEY_FMT, {"sum_key": "cost"}),
+        ("G — CPC (weighted)",      "CPC",          "ratio", MONEY_FMT, {"num_key": "cost", "den_key": "clk"}),
+        ("H — CPA (weighted)",      "CPA",          "ratio", MONEY_FMT, {"num_key": "cost", "den_key": "conv"}),
+        ("I — CvR (weighted)",      "CvR",          "ratio", PCT_FMT,   {"num_key": "conv", "den_key": "clk"}),
+        ("J — ROAS (weighted)",     "ROAS",         "ratio", ROAS_FMT,  {"num_key": "rev",  "den_key": "cost"}),
+        ("K — RPL (weighted)",      "RPL",          "ratio", MONEY_FMT, {"num_key": "rev",  "den_key": "conv"}),
+        ("L — GP",                  "GP",           "sum",   MONEY_FMT, {"sum_key": "gp"}),
+        ("M — Margin (weighted)",   "Margin",       "ratio", PCT_FMT,   {"num_key": "gp",   "den_key": "rev"}),
+    ]
+
+    # ── "Jump to:" navigation block ────────────────────────────────────
+    # Each grid occupies: 1 label row + 1 header row + N data rows
+    # (where N = len(week_mondays)) + 1 totals row + 1 WoW row = N+4
+    # rows, with 2 blank spacer rows between consecutive labels. So the
+    # row-stride between consecutive label rows is N+6.
+    #
+    # We pre-compute where each grid label will land, write the nav
+    # block at the top, then write the grids starting at FIRST_LABEL_ROW.
+    # That row depends on how many nav rows we need (one row per 4 links
+    # plus the "Jump to:" header and a blank spacer).
+    n_links = len(grid_specs)
+    LINKS_PER_NAV_ROW = 4
+    n_nav_rows = (n_links + LINKS_PER_NAV_ROW - 1) // LINKS_PER_NAV_ROW
+    # Nav layout: row 3 = "Jump to:" header; rows 4..(3+n_nav_rows) = links;
+    # one blank spacer row; then first grid label.
+    FIRST_LABEL_ROW = 3 + n_nav_rows + 2  # header_row + n_nav_rows + blank
+    label_stride = len(week_mondays) + 6
+
+    label_rows = [FIRST_LABEL_ROW + i * label_stride for i in range(n_links)]
+
+    nav_header_font = Font(bold=True, size=11, color="305496", name="Arial")
+    link_font = Font(name="Arial", color="0563C1", underline="single")
+    annot_font = Font(name="Arial", color="595959", italic=True, size=9)
+
+    ws.cell(row=3, column=1, value="Jump to:").font = nav_header_font
+
+    # Pack links into a grid: 4 (link, annotation) pairs per nav row, so
+    # 8 columns used. The link sits in cols 1,3,5,7; the "row N" annotation
+    # in cols 2,4,6,8. (Matches the Microsoft layout.)
+    for i, (spec, target_row) in enumerate(zip(grid_specs, label_rows)):
+        _, nav_text, _, _, _ = spec
+        nav_row = 4 + (i // LINKS_PER_NAV_ROW)
+        slot_in_row = i % LINKS_PER_NAV_ROW
+        link_col = 1 + slot_in_row * 2
+        annot_col = link_col + 1
+
+        # HYPERLINK formula: target syntax is "#'SheetName'!A<row>".
+        # Quote-escape the sheet name; ws.title is the live sheet name.
+        sheet_ref = ws.title.replace("'", "''")  # SQL-style quote-escape
+        formula = f'=HYPERLINK("#\'{sheet_ref}\'!A{target_row}","{nav_text}")'
+        cell = ws.cell(row=nav_row, column=link_col, value=formula)
+        cell.font = link_font
+
+        annot_cell = ws.cell(row=nav_row, column=annot_col, value=f"row {target_row}")
+        annot_cell.font = annot_font
+
+    # ── Grids ──────────────────────────────────────────────────────────
+    # Write each grid at its pre-computed label row — once per device
+    # section, side by side. The Total section keeps the bare metric
+    # label (matches the nav links); Mobile / Non-Mobile prefix theirs
+    # so a horizontal scroll always tells you which slice you're in.
+    last_row = None
+    for (label, _, kind, fmt, kwargs), label_row in zip(grid_specs, label_rows):
+        for sec_name, sec_start_col, sec_cols in sections:
+            sec_label = label if sec_name == "Total" else f"{label} — {sec_name}"
+            last_row = write_grid(label_row, sec_label, kind, fmt,
+                                  colmap=sec_cols, start_col=sec_start_col,
+                                  **kwargs)
+
+    # ── Trend charts ───────────────────────────────────────────────────
+    # One line chart per grid PER DEVICE SECTION, anchored two columns
+    # right of the section's Total column, level with the grid's section
+    # label. Each plots that section's weekly "Total" column across all
+    # weeks in the window — complete + current partial — with value-only
+    # labels rendered ABOVE the line. Categories are the section's
+    # week_start dates. Chart height is derived from the grid stride so
+    # consecutive charts never overlap regardless of --weeks.
+    n_weeks = len(week_mondays)
+    # One grid stride = n_weeks + 6 rows (label + header + weeks + totals
+    # + WoW + 2 spacers). Default Excel row height ≈ 0.5 cm; leave one
+    # row of breathing room at the bottom of each chart.
+    chart_height_cm = max(6.0, (label_stride - 1) * 0.5)
+    chart_width_cm = 16.0
+
+    for (label, nav_text, kind, fmt, kwargs), label_row in zip(grid_specs, label_rows):
+        grid_header_row = label_row + 1
+        first_data_row = grid_header_row + 1
+        last_data_row = grid_header_row + n_weeks
+
+        for sec_name, sec_start_col, _sec_cols in sections:
+            total_col_idx = sec_start_col + 8
+            avg_col_idx = sec_start_col + 9          # hidden helper column
+            anchor_col = get_column_letter(sec_start_col + 10)
+            tot_letter = get_column_letter(total_col_idx)
+
+            # Helper column: the average of this grid's plotted weekly
+            # Totals, repeated for every week row so it draws as a flat
+            # reference line across the chart. AVERAGE ignores the ""
+            # strings that ratio Totals produce on zero denominators.
+            # The column is hidden (see below); charts still read it
+            # because visible_cells_only=False.
+            avg_ref = (f"=IFERROR(AVERAGE(${tot_letter}${first_data_row}:"
+                       f"${tot_letter}${last_data_row}),\"\")")
+            ws.cell(row=grid_header_row, column=avg_col_idx, value="Average")
+            for rr in range(first_data_row, last_data_row + 1):
+                c = ws.cell(row=rr, column=avg_col_idx, value=avg_ref)
+                c.number_format = fmt
+
+            chart = LineChart()
+            if sec_name == "Total":
+                chart.title = f"{nav_text} — weekly Total"
+            else:
+                chart.title = f"{nav_text} — {sec_name} weekly Total"
+            chart.style = 12
+            chart.height = chart_height_cm
+            chart.width = chart_width_cm
+            chart.legend = None
+            chart.y_axis.majorGridlines = None
+            chart.y_axis.numFmt = fmt
+            chart.x_axis.numFmt = "yyyy-mm-dd"
+            # openpyxl quirk: without delete=False Excel sometimes hides
+            # the axes on generated line charts.
+            chart.y_axis.delete = False
+            chart.x_axis.delete = False
+            # The Average series lives in a hidden helper column — keep
+            # plotting it.
+            chart.visible_cells_only = False
+
+            # Series 1 — this section's weekly Total. Include the header
+            # cell so the series is named after the Total column.
+            data_ref = Reference(ws, min_col=total_col_idx,
+                                 max_col=total_col_idx,
+                                 min_row=grid_header_row,
+                                 max_row=last_data_row)
+            chart.add_data(data_ref, titles_from_data=True)
+            cats_ref = Reference(ws, min_col=sec_start_col,
+                                 max_col=sec_start_col,
+                                 min_row=first_data_row,
+                                 max_row=last_data_row)
+            chart.set_categories(cats_ref)
+
+            series = chart.series[0]
+            series.smooth = False
+            series.dLbls = DataLabelList()
+            series.dLbls.showVal = True           # value ONLY —
+            series.dLbls.showSerName = False      # no series name,
+            series.dLbls.showCatName = False      # no category name,
+            series.dLbls.showLegendKey = False    # no legend key,
+            series.dLbls.showPercent = False
+            series.dLbls.showBubbleSize = False
+            series.dLbls.position = "t"          # labels ABOVE the trend line
+            series.dLbls.numFmt = fmt
+
+            # Series 2 — flat Average reference line (dashed grey, no
+            # markers, no data labels) on the same axis, so daily
+            # movement reads against the observed-window average.
+            avg_data = Reference(ws, min_col=avg_col_idx,
+                                 max_col=avg_col_idx,
+                                 min_row=grid_header_row,
+                                 max_row=last_data_row)
+            chart.add_data(avg_data, titles_from_data=True)
+            avg_series = chart.series[1]
+            avg_series.smooth = False
+            avg_series.graphicalProperties = GraphicalProperties(
+                ln=LineProperties(solidFill="808080", w=15875,
+                                  prstDash="dash"))
+
+            ws.add_chart(chart, f"{anchor_col}{label_row}")
+
+    # Hide the Average helper columns (one per section, immediately
+    # right of each Total column). visible_cells_only=False above keeps
+    # the reference line plotting from hidden cells.
+    for _, sec_start_col, _ in sections:
+        ws.column_dimensions[get_column_letter(sec_start_col + 9)].hidden = True
+
+    # Column widths — repeat the width pattern (week_start=14, days=11,
+    # Total=13) for each device section.
+    for _, sec_start_col, _ in sections:
+        ws.column_dimensions[get_column_letter(sec_start_col)].width = 14
+        for c in range(sec_start_col + 1, sec_start_col + 8):
+            ws.column_dimensions[get_column_letter(c)].width = 11
+        ws.column_dimensions[get_column_letter(sec_start_col + 8)].width = 13
+    # Freeze just below the nav block so "Jump to:" links stay visible
+    # while a reviewer scrolls through grids.
+    ws.freeze_panes = ws.cell(row=FIRST_LABEL_ROW, column=2)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# INDEX SHEET
+# ═══════════════════════════════════════════════════════════════════
+
+def write_index_sheet(ws, code_to_meta: dict, window_start: date,
+                      last_complete_sun: date, max_data_date: date,
+                      source_note: str):
+    """First sheet: short-code -> campaign_name mapping and run context."""
+    title_font = Font(bold=True, size=14, color="305496", name="Arial")
+    label_font = Font(bold=True, name="Arial")
+    body_font = Font(name="Arial")
+    note_font = Font(italic=True, color="595959", size=9, name="Arial")
+    header_fill = PatternFill("solid", fgColor=HEADER_FILL)
+    header_font = Font(bold=True, color=HEADER_FONT_COLOR, name="Arial")
+
+    ws.cell(row=1, column=1,
+            value="Google Home Insurance — Performance Data Tables").font = title_font
+
+    ws.cell(row=3, column=1, value="Window start (Mon):").font = label_font
+    ws.cell(row=3, column=2, value=str(window_start)).font = body_font
+    ws.cell(row=4, column=1, value="Last complete Sunday:").font = label_font
+    ws.cell(row=4, column=2, value=str(last_complete_sun)).font = body_font
+    ws.cell(row=5, column=1, value="Latest data date:").font = label_font
+    ws.cell(row=5, column=2, value=str(max_data_date)).font = body_font
+    ws.cell(row=6, column=1, value="End-date source:").font = label_font
+    ws.cell(row=6, column=2, value=source_note).font = body_font
+
+    ws.cell(row=8, column=1, value=(
+        "Daily sheets carry 13 metrics (imp, clicks, cost, primary_conv, "
+        "revenue + derived cpc, cpl, rpl, roas, gp, ctr, cvr, margin). "
+        "DOW sheets show all thirteen of those metrics broken out by weekday × "
+        "week, with a Total column (weighted for ratios) and a WoW % row "
+        "comparing the two most recent complete weeks. All conversion "
+        "figures are routed primary only — sourced from "
+        "keyword_performance_daily, not the unrouted columns on "
+        "campaign_performance_daily.")
+    ).font = note_font
+
+    # Sheet index header
+    hdr_row = 10
+    for c, h in enumerate(["short_code", "scope", "status",
+                            "campaign_name", "current_tcpa"], 1):
+        cell = ws.cell(row=hdr_row, column=c, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    rows_sorted = sorted(
+        code_to_meta.items(),
+        key=lambda kv: (0 if kv[0] == "Account" else 1, kv[1].get("campaign_name", "")),
+    )
+    for i, (code, meta) in enumerate(rows_sorted):
+        r = hdr_row + 1 + i
+        ws.cell(row=r, column=1, value=code).font = body_font
+        ws.cell(row=r, column=2, value=("account-level" if code == "Account"
+                                         else "single-campaign")).font = body_font
+        ws.cell(row=r, column=3, value=meta.get("status", "")).font = body_font
+        ws.cell(row=r, column=4, value=meta.get("campaign_name", "")).font = body_font
+        tcpa = meta.get("current_tcpa")
+        if tcpa is not None and pd.notna(tcpa):
+            ws.cell(row=r, column=5, value=float(tcpa)).number_format = '"$"#,##0.00'
+
+    widths = [14, 16, 10, 60, 13]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+
+# ═══════════════════════════════════════════════════════════════════
+# WORKBOOK ASSEMBLY
+# ═══════════════════════════════════════════════════════════════════
+
+def build_workbook(conn, window_start: date, last_complete_sun: date,
+                   max_data_date: date, source_note: str,
+                   full_week_total: bool = False) -> Workbook:
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    camp_meta = fetch_campaigns(conn)
+    print(f"  {len(camp_meta)} ENABLED+PAUSED campaigns")
+
+    daily_all = fetch_daily_metrics(conn, window_start, max_data_date)
+    if daily_all.empty:
+        raise RuntimeError("No daily metrics in the window — nothing to write")
+
+    # Account-level: sum per date across all enabled+paused campaigns.
+    # Each row already carries Total (=Search+Audience) and the Search
+    # slice (m_* columns), so the account totals sum cleanly. Revenue is
+    # all_conversion_value and conversions is the `conversions` column
+    # (Microsoft conventions), summed across both networks.
+    account_daily = (
+        daily_all.groupby("date", as_index=False)
+                 .agg(impressions=("impressions", "sum"),
+                      clicks=("clicks", "sum"),
+                      cost_usd=("cost_usd", "sum"),
+                      primary_conversions=("primary_conversions", "sum"),
+                      primary_conv_value=("primary_conv_value", "sum"),
+                      m_impressions=("m_impressions", "sum"),
+                      m_clicks=("m_clicks", "sum"),
+                      m_cost_usd=("m_cost_usd", "sum"),
+                      m_primary_conversions=("m_primary_conversions", "sum"),
+                      m_primary_conv_value=("m_primary_conv_value", "sum"))
+    )
+
+    code_to_meta = {
+        "Account": {"campaign_name": "ALL enabled+paused campaigns (sum)",
+                    "status": "—", "current_tcpa": None},
+    }
+
+    # Account sheets (2: Daily + DOW)
+    ws_d = wb.create_sheet("Daily_Account")
+    last_row = write_daily_sheet(
+        ws_d, account_daily, window_start, max_data_date,
+        max_data_date, last_complete_sun,
+        label="Account (all campaigns)", is_account=True,
+    )
+    print(f"  ✓ Daily_Account ({last_row - 4} rows)")
+    daily_first_row = 5
+    daily_last_row = last_row
+
+    ws_g = wb.create_sheet("DOW_Account")
+    write_dow_grid_sheet(
+        ws_g, "Daily_Account", window_start, max_data_date,
+        max_data_date, last_complete_sun,
+        daily_first_row, daily_last_row, label="Account",
+        full_week_total=full_week_total,
+    )
+    print("  ✓ DOW_Account")
+
+    # Per-campaign sheets (2 each: Daily + DOW)
+    written_codes = {"Account"}
+    for _, cm in camp_meta.iterrows():
+        cid = cm["campaign_id"]
+        cname = cm["campaign_name"]
+        status = cm["status"]
+        camp_daily = daily_all[daily_all["campaign_id"] == cid].drop(columns=["campaign_id"])
+        # Inclusion: any spend OR any revenue in the window (Microsoft rule,
+        # consistent with the other Microsoft scripts) — keeps paused
+        # campaigns that contributed spend/revenue/GP.
+        if (camp_daily["cost_usd"].sum() < 1e-6
+                and camp_daily["primary_conv_value"].sum() < 1e-6):
+            print(f"  (skip: {cname} — no spend or revenue in window)")
+            continue
+
+        code = short_code(cname)
+        base_code = code
+        suffix = 2
+        while code in written_codes:
+            code = f"{base_code}{suffix}"
+            suffix += 1
+        written_codes.add(code)
+        code_to_meta[code] = {"campaign_name": cname, "status": status,
+                              "current_tcpa": cm["current_tcpa"]}
+
+        ws_d = wb.create_sheet(f"Daily_{code}")
+        last_row = write_daily_sheet(
+            ws_d, camp_daily, window_start, max_data_date,
+            max_data_date, last_complete_sun,
+            label=cname, is_account=False,
+        )
+        ws_g = wb.create_sheet(f"DOW_{code}")
+        write_dow_grid_sheet(
+            ws_g, f"Daily_{code}", window_start, max_data_date,
+            max_data_date, last_complete_sun,
+            5, last_row, label=cname,
+            full_week_total=full_week_total,
+        )
+        print(f"  ✓ Daily_{code} / DOW_{code}  ({cname})")
+
+    ws_idx = wb.create_sheet("Index", 0)
+    write_index_sheet(ws_idx, code_to_meta, window_start,
+                       last_complete_sun, max_data_date, source_note)
+    print("  ✓ Index")
+
+    # ── Sheet re-order: Index | all DOW | all Daily ────────────────────
+    # Sheets are created Daily-then-DOW per scope because the DOW SUMIFS
+    # formulas need the Daily sheet's row extent. Reorder once here so
+    # every DOW sheet sits side by side immediately after the Index.
+    # Relative order within each group is preserved (Account first, then
+    # campaigns in creation order). Cross-sheet formula references are by
+    # name, so reordering is purely cosmetic and safe.
+    dow_sheets = [s for s in wb.worksheets if s.title.startswith("DOW_")]
+    daily_sheets = [s for s in wb.worksheets if s.title.startswith("Daily_")]
+    wb._sheets = [wb["Index"]] + dow_sheets + daily_sheets
+    print("  ✓ Sheet order: Index | DOW×{} | Daily×{}".format(
+        len(dow_sheets), len(daily_sheets)))
+
+    return wb
+
+
+# ═══════════════════════════════════════════════════════════════════
+# RECONCILIATION CHECK
+# ═══════════════════════════════════════════════════════════════════
+
+def run_reconciliation(conn, max_data_date: date) -> None:
+    """Print a last-30-day Microsoft reconciliation: Search vs Audience
+    spend / conversions / revenue, the combined Total, and a device='ALL'
+    double-count guard for each network table.
+    """
+    window_end = max_data_date
+    window_start = window_end - timedelta(days=29)
+    p = (ACCOUNT_ID, window_start.isoformat(), window_end.isoformat())
+
+    def one(sql):
+        r = conn.execute(sql, p).fetchone()
+        return tuple(float(x or 0.0) for x in r)
+
+    s_spend, s_conv, s_rev = one(
+        """SELECT SUM(t.cost_micros)/1e6, SUM(t.conversions),
+                  SUM(t.all_conversion_value)
+           FROM campaign_performance_daily t
+           JOIN campaigns c ON c.campaign_id = t.campaign_id
+           WHERE c.account_id=? AND t.device='ALL' AND t.date BETWEEN ? AND ?""")
+    a_spend, a_conv, a_rev = one(
+        """SELECT SUM(t.cost_micros)/1e6, SUM(t.conversions),
+                  SUM(t.all_conversion_value)
+           FROM campaign_performance_network_daily t
+           JOIN campaigns c ON c.campaign_id = t.campaign_id
+           WHERE c.account_id=? AND t.device='ALL' AND LOWER(t.network)='audience'
+                 AND t.date BETWEEN ? AND ?""")
+
+    t_spend = s_spend + a_spend
+    t_conv = s_conv + a_conv
+    t_rev = s_rev + a_rev
+    def roas(rev, spend):
+        return rev / spend if spend > 0 else 0.0
+    def share(x, tot):
+        return (x / tot * 100.0) if tot > 0 else 0.0
+
+    # Double-count guard: device='ALL' vs SUM of non-ALL device rows.
+    def dc_guard(table, net_clause):
+        allv = one(f"""SELECT SUM(t.cost_micros)/1e6,0,0 FROM {table} t
+                       JOIN campaigns c ON c.campaign_id=t.campaign_id
+                       WHERE c.account_id=? AND t.device='ALL' {net_clause}
+                             AND t.date BETWEEN ? AND ?""")[0]
+        devv = one(f"""SELECT SUM(t.cost_micros)/1e6,0,0 FROM {table} t
+                       JOIN campaigns c ON c.campaign_id=t.campaign_id
+                       WHERE c.account_id=? AND t.device!='ALL' {net_clause}
+                             AND t.date BETWEEN ? AND ?""")[0]
+        d = abs(allv - devv) / allv * 100.0 if allv > 0 else 0.0
+        return allv, devv, d
+
+    s_all, s_dev, s_d = dc_guard("campaign_performance_daily", "")
+    a_all, a_dev, a_d = dc_guard("campaign_performance_network_daily",
+                                 "AND LOWER(t.network)='audience'")
+
+    print()
+    print("\u2500" * 70)
+    print(f"RECONCILIATION — last 30 days ({window_start} \u2192 {window_end})")
+    print("\u2500" * 70)
+    print(f"  {'':10}{'Spend':>16}{'Conv':>12}{'Revenue':>16}{'ROAS':>8}")
+    print(f"  {'Search':10}${s_spend:>14,.2f}{s_conv:>12,.1f}"
+          f"${s_rev:>14,.2f}{roas(s_rev,s_spend):>8,.2f}")
+    print(f"  {'Audience':10}${a_spend:>14,.2f}{a_conv:>12,.1f}"
+          f"${a_rev:>14,.2f}{roas(a_rev,a_spend):>8,.2f}")
+    print(f"  {'Total':10}${t_spend:>14,.2f}{t_conv:>12,.1f}"
+          f"${t_rev:>14,.2f}{roas(t_rev,t_spend):>8,.2f}")
+    print(f"  Audience share of spend: {share(a_spend,t_spend):.1f}%   "
+          f"of revenue: {share(a_rev,t_rev):.1f}%")
+    print("  Device='ALL' double-count guard (ALL vs Σ non-ALL devices):")
+    print(f"    Search:   ALL ${s_all:,.2f} vs devices ${s_dev:,.2f}  "
+          f"(\u0394 {s_d:.3f}% {'OK' if s_d<=0.5 else 'WARN'})")
+    print(f"    Audience: ALL ${a_all:,.2f} vs devices ${a_dev:,.2f}  "
+          f"(\u0394 {a_d:.3f}% {'OK' if a_d<=0.5 else 'WARN'})")
+    if s_all > 0 and s_dev > 0 and s_d > 0.5:
+        print("    \u26a0 Search device rows don't reconcile to the ALL rollup — "
+              "verify device labels before trusting the split.")
+    print("\u2500" * 70)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--db-path", default=str(DEFAULT_DB_PATH))
+    p.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    p.add_argument("--end-date", default=None,
+                   help="If omitted, auto-detects the most recent complete "
+                        "Mon-Sun week from MAX(date) in the DB. The current "
+                        "partial week is always included regardless. Pass "
+                        "explicitly (YYYY-MM-DD) to override.")
+    p.add_argument("--weeks", type=int, default=DEFAULT_WEEKS,
+                   help=f"Number of complete weeks to include. "
+                        f"Default: {DEFAULT_WEEKS}")
+    p.add_argument("--full-week-total", action="store_true",
+                   help="Override matched-day totals: the DOW 'Total' "
+                        "column always covers the full Mon-Sun week "
+                        "(week_start + 6), even when the latest week is "
+                        "partial. Default behavior matches every week's "
+                        "Total to the latest data weekday.")
+    return p.parse_args()
+
+
+def main():
+    args = parse_args()
+    db_path = Path(args.db_path)
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not db_path.exists():
+        print(f"ERROR: DB not found at {db_path}")
+        sys.exit(1)
+
+    banner("CAMPAIGN PERFORMANCE DATA TABLES — Microsoft Home (Search vs Audience)")
+    print(f"  DB:                  {db_path}")
+    print(f"  Output:              {output_dir}")
+
+    conn = sqlite3.connect(db_path)
+    window_start, last_complete_sun, max_data_date, source_note = \
+        resolve_window(conn, args.end_date, args.weeks)
+    print(f"  Window start (Mon):  {window_start}")
+    print(f"  Last complete Sun:   {last_complete_sun}")
+    print(f"  Latest data date:    {max_data_date}  ({source_note})")
+    print(f"  Weeks (complete):    {args.weeks}")
+    print()
+
+    print("Building workbook...")
+    if args.full_week_total:
+        print("  Total column:        FULL WEEK (override; Mon-Sun +6)")
+    wb = build_workbook(conn, window_start, last_complete_sun,
+                        max_data_date, source_note,
+                        full_week_total=args.full_week_total)
+
+    run_date = max_data_date.isoformat()
+    output_path = output_dir / f"campaign_performance_data_microsoft_network_{run_date}.xlsx"
+    wb.save(output_path)
+    print()
+    print(f"  ✓ Wrote {output_path}")
+
+    run_reconciliation(conn, max_data_date)
+
+    conn.close()
+
+
+if __name__ == "__main__":
+    main()

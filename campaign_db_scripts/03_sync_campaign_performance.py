@@ -550,6 +550,12 @@ def parse_args():
     grain.add_argument("--hourly-only", action="store_true")
     grain.add_argument("--geo-only",    action="store_true")
 
+    parser.add_argument("--accounts", metavar="LABELS", default="home,term_life",
+                        help="Comma-separated vertical labels to sync "
+                             "(default: home,term_life -- scope-by-responsibility "
+                             "ruling 2026-09-24; 'all' = every .env account). "
+                             "Unknown labels abort.")
+
     return parser.parse_args()
 
 
@@ -599,7 +605,17 @@ def main():
     print("=" * 65)
 
     accounts = discover_accounts()
-    print(f"\nAccounts : {len(accounts)} active account(s) from .env")
+    if args.accounts.strip().lower() != "all":
+        wanted = {x.strip().lower() for x in args.accounts.split(",") if x.strip()}
+        known = {a["vertical"] for a in accounts}
+        unknown = wanted - known
+        if unknown:
+            raise SystemExit(f"[ABORT] unknown --accounts label(s): {sorted(unknown)}; "
+                             f"known: {sorted(known)}")
+        accounts = [a for a in accounts if a["vertical"] in wanted]
+    print(f"\nAccounts : {len(accounts)} in scope "
+          f"({', '.join(a['vertical'] for a in accounts)}) "
+          f"[--accounts {args.accounts}]")
     if run_daily:
         print(f"Daily    : {d_start} → {d_end}")
     if run_hourly:

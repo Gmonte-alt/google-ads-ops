@@ -153,6 +153,7 @@ DEVICE_MAP = {
     "Smartphone":    "MOBILE",
     "Tablet":        "TABLET",
     "Connected TVs": "CONNECTED_TV",
+    "Non-smart phone": "NON_SMART_PHONE",
 }
 
 # --- Microsoft -> DB location-type label mapping ---

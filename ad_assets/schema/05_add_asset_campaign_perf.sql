@@ -14,7 +14,11 @@
 --   * impressions: presence-conditioned; authoritative on click_type='ALL'
 --     rows only (repeat across click_type rows, never divided)
 --   * clicks/conversions/value/cost PARTITION across click_type within one
---     (asset, campaign, date) -- 'SITELINKS' rows = direct clicks, exclusive
+--     (asset, campaign, date). click_type = KIND of click, not which asset
+--     was clicked: 'SITELINKS' rows include co-served neighbors' sitelink
+--     clicks (~1.5x). Per-asset direct credit = click_type='THIS_ASSET'
+--     rows (interaction segment, 01c sync; excluded from partition checks;
+--     never use their impressions). Corrected 2026-09-03.
 --   * across campaigns for one asset: campaign attribution sums ~= the
 --     customer-level total in asset_performance_daily (reconciliation is a
 --     WARN assertion in the sync, not an equality -- Google's attribution

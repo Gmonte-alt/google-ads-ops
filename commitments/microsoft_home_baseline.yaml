@@ -1,37 +1,101 @@
 microsoft_home_geo_tiers:
-  baseline_date: '2026-05-24'
+  baseline_date: '2026-09-14'
   baseline_model: C2_weighted_kmeans
-  baseline_blend: 0.6
+  baseline_blend: 0.0            # blend reserved for weekly monitoring only —
+                                 # 5-anchor backtest showed boundary churn was recency-injected
   baseline_k: 6
+  baseline_centroids_note: >-
+    Frozen centroids RETAINED from original freeze (not re-anchored): unblended
+    2026-09-14 clustering agreed with them on 25/25 eligible states. Boundaries
+    held since baseline; memberships moved.
   commitments:
-    Illinois: TIER ONE
-    Colorado: TIER ONE
-    Oregon: TIER ONE
-    New Jersey: TIER ONE
-    Massachusetts: TIER TWO
-    Missouri: TIER TWO
-    Texas: TIER TWO
-    Minnesota: TIER TWO
-    Arizona: TIER THREE
-    Oklahoma: TIER THREE
-    Tennessee: TIER THREE
-    Arkansas: TIER THREE
-    Ohio: TIER THREE
-    Wisconsin: TIER THREE
-    Georgia: TIER THREE
-    Maryland: TIER THREE
-    Pennsylvania: TIER FOUR
-    Virginia: TIER FOUR
-    Alabama: TIER FIVE
-    Indiana: TIER FIVE
-    Washington: TIER FIVE
-    Michigan: TIER FIVE
-    Kentucky: TIER FIVE
-    North Carolina: TIER FIVE
+    Kentucky: TIER ONE            # sub-threshold, watchlist
+    Massachusetts: TIER ONE
+    New Hampshire: TIER ONE       # oscillating, sub-threshold — expect bounce
+    Vermont: TIER ONE             # sub-threshold
+    Alabama: TIER TWO             # drifting down 3%/wk, sub-threshold, watchlist
+    Arizona: TIER TWO
+    New Jersey: TIER TWO          # oscillating (ONE/TWO boundary)
+    Ohio: TIER TWO                # drifting down 4%/wk
+    Oregon: TIER TWO              # drifting up 5%/wk
+    Colorado: TIER THREE          # drift unconfirmed
+    Connecticut: TIER THREE
+    Illinois: TIER THREE          # drifting down 2%/wk
+    Pennsylvania: TIER THREE      # drifting up 8%/wk
+    Indiana: TIER FOUR            # oscillating, sub-threshold
+    Minnesota: TIER FOUR          # drifting down 7%/wk
+    Oklahoma: TIER FOUR           # oscillating, sub-threshold
+    Texas: TIER FOUR              # drifting down 2%/wk (THREE/FOUR boundary)
+    Utah: TIER FOUR               # oscillating, sub-threshold
+    Arkansas: TIER FIVE           # oscillating, sub-threshold
+    Delaware: TIER FIVE           # sub-threshold
+    Georgia: TIER FIVE            # drifting down 6%/wk
+    Idaho: TIER FIVE              # oscillating, sub-threshold
+    Iowa: TIER FIVE               # drifting down 9%/wk, sub-threshold
+    Kansas: TIER FIVE             # drifting down 2%/wk
+    Maine: TIER FIVE              # sub-threshold
+    Maryland: TIER FIVE
+    Mississippi: TIER FIVE        # drifting down 5%/wk, sub-threshold
+    Missouri: TIER FIVE
+    Montana: TIER FIVE            # drifting down 5%/wk, sub-threshold
+    New Mexico: TIER FIVE
+    North Carolina: TIER FIVE     # drifting down 2%/wk
+    Tennessee: TIER FIVE          # drifting down 11%/wk — steepest decliner
+    Virginia: TIER FIVE
+    West Virginia: TIER FIVE      # sub-threshold
+    Wisconsin: TIER FIVE          # sub-threshold
+    Alaska: TIER SIX              # drifting down 7%/wk, sub-threshold
     California: TIER SIX
     Florida: TIER SIX
+    Hawaii: TIER SIX              # sub-threshold
+    Louisiana: TIER SIX           # sub-threshold
+    Michigan: TIER SIX
+    Nebraska: TIER SIX            # drifting down 8%/wk, sub-threshold
+    Nevada: TIER SIX              # sub-threshold
+    New York: TIER SIX            # drifting up 3%/wk
+    North Dakota: TIER SIX        # drifting down 9%/wk, sub-threshold
+    Rhode Island: TIER SIX        # sub-threshold
+    South Carolina: TIER SIX
+    South Dakota: TIER SIX        # sub-threshold
+    Washington: TIER SIX
   retier_history:
   - date: '2026-05-24'
     reason: initial_baseline_commitment
     changes: initial
     states_committed: 26
+  - date: '2026-09-14'
+    reason: full_rebaseline_after_structural_changes
+    drivers: >-
+      Audience network excluded from search campaigns 8/14; tCPA raise sequence
+      Jul-Aug; Tier 4 campaign retirement; July DKI incident recovery. Evidence:
+      3-window assessment (84/42/28d) + 5-anchor backtest (8/17-9/14, blended +
+      unblended). Geometry basis switched to unblended 12w (blend kept for
+      monitoring); frozen centroids validated 25/25 and retained.
+    changes:
+    - 'Alabama: TIER FIVE -> TIER TWO'
+    - 'Arizona: TIER THREE -> TIER TWO'
+    - 'Arkansas: TIER THREE -> TIER FIVE'
+    - 'Colorado: TIER ONE -> TIER THREE'
+    - 'Georgia: TIER THREE -> TIER FIVE'
+    - 'Illinois: TIER ONE -> TIER THREE'
+    - 'Indiana: TIER FIVE -> TIER FOUR'
+    - 'Kentucky: TIER FIVE -> TIER ONE'
+    - 'Maryland: TIER THREE -> TIER FIVE'
+    - 'Massachusetts: TIER TWO -> TIER ONE'
+    - 'Michigan: TIER FIVE -> TIER SIX'
+    - 'Minnesota: TIER TWO -> TIER FOUR'
+    - 'Missouri: TIER TWO -> TIER FIVE'
+    - 'New Jersey: TIER ONE -> TIER TWO'
+    - 'Ohio: TIER THREE -> TIER TWO'
+    - 'Oklahoma: TIER THREE -> TIER FOUR'
+    - 'Oregon: TIER ONE -> TIER TWO'
+    - 'Pennsylvania: TIER FOUR -> TIER THREE'
+    - 'Tennessee: TIER THREE -> TIER FIVE'
+    - 'Texas: TIER TWO -> TIER FOUR'
+    - 'Virginia: TIER FOUR -> TIER FIVE'
+    - 'Washington: TIER FIVE -> TIER SIX'
+    - 'Wisconsin: TIER THREE -> TIER FIVE'
+    new_commitments: 23 states first committed (CT, NY, KS, NM, DE, UT + 17
+      low-volume states at their nearest-centroid tiers)
+    held_unchanged: [California, Florida, North Carolina]
+    states_committed: 49

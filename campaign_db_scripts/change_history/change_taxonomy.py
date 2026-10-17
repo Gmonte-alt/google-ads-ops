@@ -46,11 +46,17 @@ R, M = "restructure", "modification"
 def _norm(s):
     return (s or "").replace("\u202f", " ").replace("\xa0", " ")
 
+_CNT_KW = re.compile(r"(\d+)\s+(?:negative\s+)?(?:\w+\s+)?match\s+keyword", re.I)
+_CNT_OTHER = re.compile(r"(\d+)\s+(?:negative\s+)?(regions?|cities|ad groups?|campaigns?)", re.I)
 _LEAD_INT = re.compile(r"^\s*(\d+)\b")
 def _count(text, default=1):
-    """Only a LEADING count ('5 regions added' -> 5). Single-entity changes
-    ('Campaign changed', 'Ad group created', 'Label added') -> 1. Never read an
-    integer from mid-prose (percentages, dollar amounts, dates, tier numbers)."""
+    """Item count. Handles leading ('5 regions added'), the count before the noun
+    ('...Confie: 92 negative phrase match keywords added'), and single-entity changes -> 1.
+    Never reads a mid-prose integer (percent, dollar, date, tier number)."""
+    for rx in (_CNT_KW, _CNT_OTHER):
+        m = rx.search(text)
+        if m:
+            return int(m.group(1))
     m = _LEAD_INT.match(text)
     return int(m.group(1)) if m else default
 
@@ -59,7 +65,7 @@ def _count(text, default=1):
 _PATTERNS = [
     # --- bidding ---
     (r"moved from bid strategy named",                 "bid_strategy_swap",   "campaign", "swap",    R),
-    (r"['\"][^'\"]*combined['\"]:\s*target roas changed", "bid_target_portfolio", "strategy", "update", M),
+    (r"['\"][^'\"]+['\"]:\s*(?:min\.?\s+|target\s+)roas changed", "bid_target_portfolio", "strategy", "update", M),
     (r"ad group target roas (changed|increased|decreased|updated)", "bid_target_adgroup", "ad_group", "update", M),
     (r"target roas changed from",                      "bid_target_campaign", "campaign", "update",  M),
     # --- budget ---
@@ -78,6 +84,7 @@ _PATTERNS = [
     (r"\d+\s+\w*\s*match\s+keywords?\s+removed",         "keyword_status",      "keyword",  "remove",  M),
     # --- ads (RSA) ---
     (r"responsive search ad created",                   "rsa_new",             "ad_group", "create",  M),
+    (r"responsive search ads? removed",                 "rsa_removed",         "ad_group", "remove",  M),
     (r"responsive search ad changed.*status changed .* to paused", "rsa_paused", "ad_group", "pause",  M),
     (r"responsive search ad changed",                   "rsa_change",          "ad_group", "update",  M),
     # --- structural status ---
@@ -89,6 +96,31 @@ _PATTERNS = [
     (r"tracking template changed",                      "tracking_template",   "campaign", "update",  M),
     (r"campaign asset created",                         "asset_change",        "campaign", "create",  M),
     (r"label added",                                    "label_change",        "campaign", "label",   M),
+    # --- keyword enable (status; enabled was previously uncaught) ---
+    (r"\d+\s+\w*\s*match\s+keywords?\s+enabled",         "keyword_status",      "keyword",  "enable",  M),
+    # --- PMax / audience / targeting (2025+ vocabulary; PMax in scope) ---
+    (r"assets? in asset group .* created",              "pmax_asset_group",    "asset_group", "create", R),
+    (r"asset group .* (created|added)",                 "pmax_asset_group",    "asset_group", "create", R),
+    (r"\d+\s+audience segments?\s+(added|removed)",      "audience_targeting",  "campaign", "add",     M),
+    (r"\d+\s+detailed demographics?\s+(added|removed)",  "audience_targeting",  "campaign", "add",     M),
+    (r"\d+\s+languages?\s+(added|removed)",              "language_targeting",  "campaign", "add",     M),
+    (r"\d+\s+platforms?\s+(added|removed)",              "platform_targeting",  "campaign", "add",     M),
+    (r"\d+\s+negative (countries|country|metros?|regions?|cities|city)\s+added",
+                                                        "geo_negative",        "campaign", "add",     M),
+    (r"\d+\s+negative content labels?\s+added",          "content_exclusion",   "campaign", "add",     M),
+    (r"\d+\s+ad schedules?\s+(added|removed|changed)",  "ad_schedule",         "campaign", "update",  M),
+    (r"seasonality adjustment .* (updated|created|named|changed)",
+                                                        "seasonality_adj",     "account",  "update",  M),
+    (r"(standard goals changed|account-default goals)",  "conversion_goals",    "campaign", "update",  M),
+    (r"(campaign |ad group |customer )?asset (created|changed|removed)",
+                                                        "asset_change",        "campaign", "update",  M),
+    (r"negative brand lists?\s+added",                   "negative_list",       "campaign", "apply",   M),
+    (r"\bcampaign created\b",                            "campaign_created",    "campaign", "create",  R),
+    # --- GENERIC header fallbacks: MUST stay last & header-anchored (^) so detail-specific
+    #     patterns above win; these catch only otherwise-unclassified 'X changed' headers ---
+    (r"^budget changed",                                 "budget_change",       "campaign", "update",  M),
+    (r"^campaign changed",                               "campaign_config",     "campaign", "update",  M),
+    (r"^ad group changed",                               "adgroup_config",      "ad_group", "update",  M),
 ]
 _COMPILED = [(re.compile(rx, re.I | re.S), cat, gr, act, kl) for rx, cat, gr, act, kl in _PATTERNS]
 
@@ -105,15 +137,18 @@ def categorize(changes_raw, campaign_col=None, ad_group_col=None):
     return {"category": "other", "grain": None, "action": None,
             "klass": M, "count": 1, "subtype": (text.split("\n")[0][:40] or None)}
 
+
 def split_blocks(changes_raw):
-    """Split a Changes cell into sub-change blocks: one UNINDENTED header line plus the
-    INDENTED detail lines beneath it (Google indents details by 2 spaces)."""
+    """Split a Changes cell into sub-change blocks. Real cells bundle several changes
+    (e.g. exact + phrase + broad keyword-add blocks, or a keyword-add plus a label and
+    RSA-path change). A block = one UNINDENTED header line plus the INDENTED detail lines
+    beneath it (Google indents details by 2 spaces)."""
     text = _norm(changes_raw)
     blocks, cur = [], []
     for ln in text.split("\n"):
         if not ln.strip():
             continue
-        if not ln[:1].isspace():
+        if not ln[:1].isspace():          # unindented -> starts a new block
             if cur:
                 blocks.append("\n".join(cur))
             cur = [ln]
@@ -125,5 +160,6 @@ def split_blocks(changes_raw):
 
 
 def categorize_cell(changes_raw, campaign_col=None, ad_group_col=None):
-    """Categorize EACH sub-change block -> list of records (multi-change cells yield several)."""
+    """Categorize EACH sub-change block -> list of records. A multi-change cell yields
+    multiple records (so counts by category are per-action, not per-cell)."""
     return [categorize(b, campaign_col, ad_group_col) for b in split_blocks(changes_raw)]

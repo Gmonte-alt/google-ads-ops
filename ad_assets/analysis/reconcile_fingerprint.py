@@ -33,7 +33,8 @@ def main():
     p.add_argument("--db", required=True)
     p.add_argument("--expect", required=True, help="Pre-registered fingerprint (e.g. e1fd7d1595)")
     p.add_argument("--label", required=True, help="Label to apply/verify (e.g. BCC-01)")
-    p.add_argument("--headlines", type=int, default=15, help="Expected headline count (default 15)")
+    p.add_argument("--headlines", type=int, default=15,
+               help="expected headline count (15 = BCC-01 default)")
     p.add_argument("--since", default="2026-07-23",
                    help="For drift diagnostics: new-fingerprint search window start")
     p.add_argument("--apply", action="store_true", help="Write the label (default: verify only)")

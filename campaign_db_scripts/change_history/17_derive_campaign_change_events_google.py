@@ -48,10 +48,16 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 import json
 import collections
 import campaign_db_scripts.change_history.gads_change_common as C
+
+# quoted portfolio-strategy prose: '"Life CR3": Target ROAS changed...' / '... Min. ROAS ...'
+_QSTRAT = re.compile(r'[\'"]([^\'"]+)[\'"]\s*:\s*(?:min\.?|target)\s+roas', re.I)
+
+_QSTRAT_VALS = re.compile(r'"([^"]+)"\s*:\s*(?:min\.?|target)\s+roas changed from\s+([\d.]+)\s+to\s+([\d.]+)', re.I)
 
 SOURCE = "google_ui_csv"
 RESOLVED_VIA = "name_match_current"
@@ -106,6 +112,50 @@ def main():
             if r["bidding_strategy_id"]:
                 strat2camps[r["bidding_strategy_id"]].append(r["campaign_id"])
 
+        # Portfolio-strategy NAME -> id, for CSV rows that log a portfolio change with a
+        # blank campaign column (Google writes those account-level; only the quoted display
+        # name identifies the strategy). Runtime-detected: campaigns.bidding_strategy_name
+        # if synced, else any *strateg* table carrying id+name. Assignment truth stays
+        # strat2camps (campaigns.bidding_strategy_id) -- names are only the lookup key.
+        strat_name2id = {}
+        strat2camps_bystr = {str(k): v for k, v in strat2camps.items()}
+        name_sources = []
+        # (a) dedicated *strateg* tables (e.g. bidding_strategies from the name sync) -- primary
+        for (tname,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                     "AND lower(name) LIKE '%strateg%'"):
+            tcols = {r["name"] for r in conn.execute("PRAGMA table_info(%s)" % tname)}
+            ncol = next((c for c in ("strategy_name", "bidding_strategy_name", "name") if c in tcols), None)
+            icol = next((c for c in ("bidding_strategy_id", "strategy_id", "id") if c in tcols), None)
+            if not (ncol and icol):
+                continue
+            q = "SELECT %s AS n, %s AS i FROM %s" % (ncol, icol, tname)
+            if "account_id" in tcols:
+                q += " WHERE account_id=%d" % acct
+            added = 0
+            for r in conn.execute(q):
+                if r["n"] is not None and r["i"] is not None:
+                    if strat_name2id.setdefault(str(r["n"]).strip(), r["i"]) == r["i"]:
+                        added += 1
+            if added:
+                name_sources.append("%s:%d" % (tname, added))
+        # (b) campaigns.bidding_strategy_name, if the sync populates it -- supplement
+        ccols = {r["name"] for r in conn.execute("PRAGMA table_info(campaigns)")}
+        if "bidding_strategy_name" in ccols:
+            added = 0
+            for r in conn.execute("SELECT DISTINCT bidding_strategy_name, bidding_strategy_id "
+                                  "FROM campaigns WHERE account_id=? AND bidding_strategy_name "
+                                  "IS NOT NULL AND bidding_strategy_id IS NOT NULL", (acct,)):
+                if str(r["bidding_strategy_name"]).strip() not in strat_name2id:
+                    strat_name2id[str(r["bidding_strategy_name"]).strip()] = r["bidding_strategy_id"]
+                    added += 1
+            if added:
+                name_sources.append("campaigns.bidding_strategy_name:%d" % added)
+        if strat_name2id:
+            print("[ok] strategy names loaded: %d (%s)" % (len(strat_name2id), ", ".join(name_sources)))
+        else:
+            print("[note] no strategy-name source found -- blank-row portfolio statements can "
+                  "only resolve via ledger pairing (run sync_bidding_strategy_names.py to enable native)")
+
         # Candidate events, cross-source deduped on (cid, day, type, old, new); API
         # is authoritative in overlap (id-native). Each value carries source + resolved_via.
         candidates = {}
@@ -129,7 +179,21 @@ def main():
         csv_raw = conn.execute(
             "SELECT change_datetime, campaign_col, ad_group_col, changes_raw "
             "FROM google_change_csv_raw WHERE account_id=?", (acct,)).fetchall()
+        # Ledger-derived strategy-name -> campaign pairing (fallback when no native name
+        # source): wherever the SAME quoted-strategy prose appears on a row WITH a populated
+        # campaign column, the ledger itself pairs name to campaign; resolve that campaign
+        # through the normal name->id chain. Used only when the pairing is unambiguous.
+        ledger_pair = collections.defaultdict(set)
+        for r in csv_raw:
+            nm = (r["campaign_col"] or "").strip()
+            if not nm or (r["ad_group_col"] or "").strip():
+                continue
+            for qn in set(_QSTRAT.findall(r["changes_raw"] or "")):
+                pcid = name2id.get(nm) or snap_name2id.get(nm)
+                if pcid:
+                    ledger_pair[qn].add(pcid)
         skipped_adgroup = unresolved = csv_stmts = snap_stmts = 0
+        port_stmts = port_native = port_ledger = 0
         unresolved_names = collections.Counter()
         for r in csv_raw:
             if (r["ad_group_col"] or "").strip():
@@ -144,11 +208,43 @@ def main():
             if cid is None:                      # renamed/retired -> historical snapshot id
                 cid = snap_name2id.get(name)
                 rv = "name_match_snapshot"
+            day = r["change_datetime"][:10]
+            if cid is None and not name.strip():
+                # Portfolio change logged account-level (blank campaign col): identify the
+                # strategy by its quoted display name; resolve to campaign(s) via REAL
+                # assignment data -- native (strategy name -> id -> campaigns.bidding_
+                # strategy_id) first, then the ledger pairing above. Fan-out mirrors the
+                # API portfolio path. Never resolved by campaign-name conventions.
+                qns = set(_QSTRAT.findall(r["changes_raw"] or ""))
+                targets, prv = [], None
+                if len(qns) == 1:
+                    qn = next(iter(qns)).strip()
+                    sid = strat_name2id.get(qn)
+                    # type-insensitive: a names source may store ids as TEXT while
+                    # campaigns stores INTEGER (sqlite affinity) -- match on str form
+                    cams = strat2camps_bystr.get(str(sid)) if sid is not None else None
+                    if cams:
+                        targets, prv = cams, "portfolio_name_native"
+                    elif len(ledger_pair.get(qn, ())) == 1:
+                        targets, prv = list(ledger_pair[qn]), "portfolio_name_ledger"
+                if targets:
+                    for pcid in targets:
+                        for ctype, old, new in events:
+                            add(pcid, day, ctype, old, new, "google_ui_csv", prv)
+                            csv_stmts += 1
+                            port_stmts += 1
+                            if prv == "portfolio_name_native":
+                                port_native += 1
+                            else:
+                                port_ledger += 1
+                    continue
+                unresolved += 1
+                unresolved_names["<portfolio:%s>" % "/".join(sorted(qns)) if qns else name] += 1
+                continue
             if cid is None:
                 unresolved += 1
                 unresolved_names[name] += 1
                 continue
-            day = r["change_datetime"][:10]
             for ctype, old, new in events:
                 add(cid, day, ctype, old, new, "google_ui_csv", rv)
                 csv_stmts += 1
@@ -195,11 +291,69 @@ def main():
                         add(cid, day, rec["change_type"], rec["old"], rec["new"], "google_api", rv)
                         api_stmts += 1
 
+        # ---- source 3: MCC ledger (manager-owned strategy changes; 18b) ----
+        # MCC-owned strategies' target changes log ONLY at the manager -- never in this
+        # account's grid or change_event feed (empirically confirmed). 18b captures them;
+        # here they map onto campaigns via the SAME assignment truth as the API path
+        # (campaigns.bidding_strategy_id), so account scoping is preserved automatically:
+        # a strategy not attached to this account's campaigns is skipped.
+        mcc_stmts = mcc_rows_other_acct = 0
+        if C.table_exists(conn, "google_mcc_change_event_raw"):
+            for r in conn.execute(
+                    "SELECT change_datetime, change_resource_name, changes_json "
+                    "FROM google_mcc_change_event_raw WHERE change_resource_type='BIDDING_STRATEGY'"):
+                sid = (r["change_resource_name"] or "").rsplit("/", 1)[-1]
+                cams = strat2camps_bystr.get(str(sid))
+                if not cams:
+                    mcc_rows_other_acct += 1
+                    continue
+                day = r["change_datetime"][:10]
+                try:
+                    changes = json.loads(r["changes_json"] or "{}")
+                except ValueError:
+                    continue
+                for path, pair in changes.items():
+                    if "target_roas" not in path or not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                        continue
+                    old_v, new_v = pair
+                    if old_v is None and new_v is None:
+                        continue
+                    for cid in cams:
+                        add(cid, day, "TARGET_ROAS",
+                            float(old_v) if old_v is not None else None,
+                            float(new_v) if new_v is not None else None,
+                            "google_api", "mcc_strategy_native")
+                        mcc_stmts += 1
+        # MCC UI-grid export (15b): the ONLY source of MCC-owned strategy target history
+        # (change_event does not track bidding strategies). Quoted-name prose, resolved by
+        # strategy name -> id -> this account's campaigns; foreign-account strategies skip.
+        if C.table_exists(conn, "google_mcc_change_csv_raw"):
+            for r in conn.execute("SELECT change_datetime, changes_raw FROM google_mcc_change_csv_raw"):
+                day = r["change_datetime"][:10]
+                for qn, old_v, new_v in _QSTRAT_VALS.findall(r["changes_raw"] or ""):
+                    sid = strat_name2id.get(qn.strip())
+                    cams = strat2camps_bystr.get(str(sid)) if sid is not None else None
+                    if not cams:
+                        mcc_rows_other_acct += 1
+                        continue
+                    for cid in cams:
+                        add(cid, day, "TARGET_ROAS", float(old_v), float(new_v),
+                            "google_ui_csv", "mcc_strategy_native")
+                        mcc_stmts += 1
+        if mcc_stmts or C.table_exists(conn, "google_mcc_change_event_raw") \
+                or C.table_exists(conn, "google_mcc_change_csv_raw"):
+            print("[ok] MCC ledger: %d statements mapped to this account's campaigns "
+                  "(%d statements belong to other accounts' strategies -- skipped)" % (
+                      mcc_stmts, mcc_rows_other_acct))
+
         print("[ok] CSV: %d statements (%d via current names, %d via snapshot fallback; "
               "skipped %d ad-group rows, %d unresolved names) | "
               "API: %d statements (%d budget fan-outs, %d strategy fan-outs, %d unresolved resources)" % (
                   csv_stmts, csv_stmts - snap_stmts, snap_stmts, skipped_adgroup, unresolved,
                   api_stmts, fanout_budget, fanout_strat, unresolved_res))
+        if port_stmts or any(k.startswith("<portfolio:") for k in unresolved_names):
+            print("[ok] portfolio-name resolution: %d statements (%d native, %d ledger-paired)" % (
+                port_stmts, port_native, port_ledger))
         print("[ok] cross-source dedup removed %d duplicate candidate(s) (API authoritative)" % dedup_drops)
         if unresolved:
             print("[WARN] %d CSV statements had a campaign name not in current campaigns: %r" % (
@@ -210,9 +364,30 @@ def main():
         for v in candidates.values():
             groups[(v["cid"], v["day"], v["type"])].append(v)
 
-        out, ambiguous = [], 0
+        out, ambiguous, anchors_dropped, anchor_conflicts = [], 0, 0, 0
         derived_at = C.now_iso()
         for (cid, day, ctype), items in sorted(groups.items()):
+            # Separate timeline-start anchors (old=None) from valued pairs. The live table
+            # is UNIQUE on (platform, account, campaign, day, type), so a key emits at most
+            # ONE row: when an anchor and valued changes share a key (strategy assigned AND
+            # target changed the same day), the valued chain wins -- its old_value already
+            # preserves the day's starting target, and anchors are excluded from measurement
+            # (old IS NULL) regardless. Anchor-only keys keep a single anchor.
+            anchor_items = [it for it in items if it["old"] is None]
+            items = [it for it in items if it["old"] is not None]
+            if anchor_items and items:
+                anchors_dropped += len(anchor_items)
+                anchor_items = []
+            if anchor_items:
+                vals = sorted({it["new"] for it in anchor_items})
+                if len(vals) > 1:
+                    anchor_conflicts += 1
+                    print("[WARN] %s %s %s: %d same-day timeline-start anchors with differing "
+                          "values %s -- keeping the highest" % (cid, day, ctype, len(anchor_items), vals))
+                it0 = anchor_items[0]
+                out.append((C.PLATFORM, acct, cid, day, ctype, None, vals[-1], len(anchor_items),
+                            it0["resolved_via"], it0["source"], args.convention_version, derived_at))
+                continue
             pairs = [(it["old"], it["new"]) for it in items]
             events, amb = C.collapse_same_day(pairs)
             if amb is not None:
@@ -237,7 +412,14 @@ def main():
                   len(out), n_roas, n_anchor, n_bud, n_collapsed, n_api, len(out) - n_api))
         print("       distinct campaigns: %d | ambiguous chains skipped: %d" % (
             len(set(e[2] for e in out)), ambiguous))
-        for e in sorted(out)[:10]:
+        if anchors_dropped:
+            print("       %d timeline-start anchor(s) dropped in favor of same-day valued events "
+                  "(unique key: one event per campaign/day/type)" % anchors_dropped)
+        # None-safe preview sort: null-old anchors (timeline starts) sort before valued
+        # events on the same campaign/day/type instead of crashing float-vs-None
+        for e in sorted(out, key=lambda t: (str(t[2]), t[3], t[4], t[5] is not None,
+                                            t[5] if t[5] is not None else 0.0,
+                                            t[6] if t[6] is not None else 0.0))[:10]:
             ov = "NULL" if e[5] is None else round(e[5], 4)
             print("       %s %-12s %s  %s -> %-7s (raw x%d) [%s/%s]" % (
                 e[3], e[4], e[2], ov, round(e[6], 4), e[7], e[9], e[8]))

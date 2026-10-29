@@ -118,9 +118,9 @@ def load_final(con):
     df=pd.read_sql_query(
         f'''SELECT {cols}, s."{SNAP["batch"]}" AS src_batch
             FROM life_disposition_snapshot s
-            JOIN (SELECT "{SNAP["lead"]}" AS d, MAX("{SNAP["batch"]}") AS mb
-                  FROM life_disposition_snapshot GROUP BY 1) m
-              ON s."{SNAP["lead"]}"=m.d AND s."{SNAP["batch"]}"=m.mb''',con)
+            JOIN (SELECT "{SNAP["lead"]}" AS d, "{SNAP["code"]}" AS sc, MAX("{SNAP["batch"]}") AS mb
+                  FROM life_disposition_snapshot GROUP BY 1,2) m
+              ON s."{SNAP["lead"]}"=m.d AND s."{SNAP["code"]}"=m.sc AND s."{SNAP["batch"]}"=m.mb''',con)
     df["lead"]=pdate(df["lead"]); df=df.dropna(subset=["lead"])
     df["code"]=df["code"].astype(str); df=df[df["code"].str.len()>=3]
     df["seg"]=df["code"].str[:2].map(SEG_OF_CODE)
@@ -145,10 +145,14 @@ def main():
     A=load_final(con)
     A=A[A["src_age"]>=5]
     A["month"]=A["lead"].map(lambda d:f"{d.year}-{d.month:02d}")
-    A.loc[A["month"]=="2026-06","month"]="2026-06*"
+    # mark months whose coverage starts mid-month (archive edge) as partial
+    first_cov=A.groupby("month")["lead"].min()
+    for m0,d0 in first_cov.items():
+        if d0.day>3: A.loc[A["month"]==m0,"month"]=m0+"*"
     A["fam"]=[family(s,c,q) for s,c,q in zip(A["status"],A["cri"],A["sqo"])]
     months=sorted(A["month"].unique())
-    print(f"[batches] {b_first}..{b_last} | rows {len(A)} | months {months}")
+    base_m = BASE_MONTH if BASE_MONTH in months else next((m for m in months if not m.endswith("*")), months[0])
+    print(f"[batches] {b_first}..{b_last} | rows {len(A)} | months {months} | base {base_m}")
 
     def agg(df):
         leads=len(df); ops=df["op"].sum(); sqo=df["sqo"].sum(); cri=df["cri"].sum(); prem=df["prem"].sum()
@@ -179,12 +183,12 @@ def main():
     for i,w_ in enumerate([9,8,7,7,8,7,8,7,9,9,9,7, 8,8,8,8,10],1): ws.column_dimensions[get_column_letter(i)].width=w_
     r=title(ws,"Funnel decomposition: prem/op = op-rate x SQO/op x CRI/SQO x prem/CRI",
         [f"KPI decay anchor (feed-based, paid channels M+R+T = Looker Strategy=Search): {anchor}",
-         f"Index block = each factor vs {BASE_MONTH} (first full month): the factor(s) below 100% are where quality leaked. {mat_note}"],16)
+         f"Index block = each factor vs {base_m} (first full month): the factor(s) below 100% are where quality leaked. {mat_note}"],16)
     r=hdr(ws,r,["Month","Seg","Leads","Ops","Op rate","SQO","SQO/op","CRI","CRI/SQO","Prem/CRI","Prem/op","KPI est",
                 "idx Op%","idx SQO/op","idx CRI/SQO","idx Prem/CRI","Prem"])
     base={}
     for s in ("Total","High","Medium","Low"):
-        g=MG[(BASE_MONTH,s)]
+        g=MG[(base_m,s)]
         base[s]=dict(opr=g["ops"]/g["leads"] if g["leads"] else None,
                      so=g["sqo"]/g["ops"] if g["ops"] else None,
                      cs=g["cri"]/g["sqo"] if g["sqo"] else None,
@@ -205,13 +209,13 @@ def main():
             put(ws,r,10,f'=IFERROR(Q{r}/H{r},"")',MONEY,fl=fl_)
             put(ws,r,11,f'=IFERROR(Q{r}/D{r},"")',MONEY,b=True,fl=fl_)
             put(ws,r,12,kpi_est(g,s,m),KPIF,b=True,fl=fl_)
-            if s not in base_row and m==BASE_MONTH: base_row[s]=r
+            if s not in base_row and m==base_m: base_row[s]=r
             br=base_row.get(s)
             for cc,src_c in ((13,"E"),(14,"G"),(15,"I"),(16,"J")):
                 put(ws,r,cc,(f'=IFERROR({src_c}{r}/{src_c}${br},"")' if br else None),IDX,fl=fl_)
             if s=="Total": tot_rows.append(r)
             r+=1
-    ch=LineChart(); ch.title=f"Stage indices vs {BASE_MONTH} (Total)"; ch.height,ch.width=9,22
+    ch=LineChart(); ch.title=f"Stage indices vs {base_m} (Total)"; ch.height,ch.width=9,22
     ch.y_axis.title="index (Jul=100%)"
     hc=18
     ws.cell(first-1,hc,"m")
@@ -432,6 +436,64 @@ def main():
             put(ws4,r,4,g2["sqo"]/g2["ops"] if g2["ops"] else None,PCT)
             put(ws4,r,5,g2["prem"]/g2["ops"] if g2["ops"] else None,MONEY)
             r+=1
+
+    # ---- DayOfWeek: volume and connect by weekday x month ----
+    wsw=wb.create_sheet("DayOfWeek")
+    DOWS=["Mon","Tue","Wed","Thu","Fri","Sat"]
+    for i in range(1,len(months)+2):
+        wsw.column_dimensions[get_column_letter(i)].width=10 if i==1 else 9
+    r=title(wsw,"Day-of-week: lead volume and connect rate by month",
+        ["Connect (SQO/op) stabilizes within days of lead creation, so recent months are near-final here. Sundays excluded (account dark).",
+         "Read the two MoM delta blocks together: a day whose volume EXPANDED and whose connect FELL is the capacity signature;",
+         "a day with flat volume and held connect is the natural control (e.g., Friday in the Aug->Sep step: ops ~flat, connect +1.5pts",
+         "while every expanded day fell). Saturday is the stress test: Sep ops +77% vs Aug, connect -11pts."],
+        len(months)+1)
+    A["dow"]=A["lead"].map(lambda d: d.weekday())          # 0=Mon .. 6=Sun
+    AD=A[A["dow"]<=5]
+    piv_op=AD.pivot_table(index="dow",columns="month",values="op",aggfunc="sum").fillna(0)
+    piv_sq=AD.pivot_table(index="dow",columns="month",values="sqo",aggfunc="sum").fillna(0)
+    def gv(piv,di,m):
+        try: return float(piv.loc[di,m])
+        except KeyError: return 0.0
+    op_row={}; sq_row={}; cn_row={}
+    def dow_block(lbl, rows_store, fill_vals):
+        nonlocal r
+        put(wsw,r,1,lbl,b=True,fl=GRAY); r+=1
+        r=hdr(wsw,r,["Day"]+months)
+        for di,dn in enumerate(DOWS):
+            put(wsw,r,1,dn,b=True)
+            fill_vals(di,r)
+            rows_store[di]=r; r+=1
+        r+=1
+    dow_block("Ops by weekday", op_row,
+        lambda di,rr:[put(wsw,rr,2+mi,gv(piv_op,di,m),NUMF) for mi,m in enumerate(months)])
+    dow_block("SQOs by weekday", sq_row,
+        lambda di,rr:[put(wsw,rr,2+mi,gv(piv_sq,di,m),NUMF) for mi,m in enumerate(months)])
+    def conn_fill(di,rr):
+        for mi,m in enumerate(months):
+            cl=get_column_letter(2+mi)
+            put(wsw,rr,2+mi,f'=IFERROR({cl}{sq_row[di]}/{cl}{op_row[di]},"")',PCT,b=True)
+    dow_block("Connect (SQO/op) by weekday", cn_row, conn_fill)
+    def dconn_fill(di,rr):
+        for mi,m in enumerate(months):
+            if mi==0: continue
+            cl,pl=get_column_letter(2+mi),get_column_letter(1+mi)
+            put(wsw,rr,2+mi,f'=IFERROR({cl}{cn_row[di]}-{pl}{cn_row[di]},"")','+0.0%;-0.0%')
+    drow={}; dow_block("MoM change in connect (pts)", drow, dconn_fill)
+    def dops_fill(di,rr):
+        for mi,m in enumerate(months):
+            if mi==0: continue
+            cl,pl=get_column_letter(2+mi),get_column_letter(1+mi)
+            put(wsw,rr,2+mi,f'=IFERROR({cl}{op_row[di]}/{pl}{op_row[di]}-1,"")','+0%;-0%')
+    drow2={}; dow_block("MoM change in ops (%)", drow2, dops_fill)
+    chw=LineChart(); chw.title="Connect rate by weekday across months"; chw.height,chw.width=9,22
+    chw.y_axis.numFmt='0%'; chw.y_axis.title="SQO/op"
+    hdr_row=cn_row[0]-1
+    for di,dn in enumerate(DOWS):
+        ref=Reference(wsw,min_col=2,max_col=1+len(months),min_row=cn_row[di],max_row=cn_row[di])
+        s_=Series(ref,title=dn); chw.series.append(s_)
+    chw.set_categories(Reference(wsw,min_col=2,max_col=1+len(months),min_row=hdr_row,max_row=hdr_row))
+    wsw.add_chart(chw,f"A{r+1}")
 
     # ---- WorkedAtAge: SAME-AGE zero-signal & SQO rates from the batch archive ----
     ws5=wb.create_sheet("WorkedAtAge")

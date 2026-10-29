@@ -221,9 +221,19 @@ def load_batch(con: sqlite3.Connection, folder: Path, reload_: bool):
                 new_codes.add(code)
             with open(f, newline="", encoding=ENC) as fh:
                 reader = csv.DictReader(fh)
-                missing = [h for h in CSV_HEADERS if h not in (reader.fieldnames or [])]
-                if missing:
-                    raise RuntimeError(f"{f.name}: schema drift, missing {missing}")
+                have = set(reader.fieldnames or [])
+                stored = {h for h, _ in COLMAP}
+                NULLABLE_OLD = {"ANI"}   # stored, but absent in pre-~mid-2026 files; unused in analysis -> NULL
+                missing_req = [h for h in stored if h not in have and h not in NULLABLE_OLD]
+                if missing_req:
+                    raise RuntimeError(f"{f.name}: schema drift, missing STORED columns {missing_req}")
+                null_old = sorted(stored & NULLABLE_OLD - have)
+                if null_old:
+                    print(f"  ~~ {f.name}: era predates {null_old} -- loading NULL")
+                missing_opt = [h for h in CSV_HEADERS if h not in have and h not in stored]
+                extra      = [h for h in have if h not in CSV_HEADERS]
+                if missing_opt or extra:
+                    print(f"  ~~ {f.name}: header drift (not stored) -- missing {missing_opt}, new {extra}")
                 seen, batch_rows = set(), []
                 for r in reader:
                     rows_raw += 1
